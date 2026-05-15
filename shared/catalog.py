@@ -3,6 +3,26 @@ from typing import Optional
 
 REVIEWS_CHANNEL_URL = "https://t.me/KotikexsMetroShopOtziv"
 
+# Premium emoji: шлем → броня → портфель → МК
+EMOJI_HELMET = "5204201311238629537"
+EMOJI_ARMOR = "5201907777227730330"
+EMOJI_BAG = "5201773765658160740"
+EMOJI_MK = "5204105005186952289"
+
+
+def _tg_emoji(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+ESCORT_GEAR_LINE = (
+    "• Выдача "
+    + _tg_emoji(EMOJI_HELMET, "🪖")
+    + _tg_emoji(EMOJI_ARMOR, "🧥")
+    + _tg_emoji(EMOJI_BAG, "👜")
+    + _tg_emoji(EMOJI_MK, "🔫")
+    + "\n"
+)
+
 ESCORT_INFO_FULL = (
     "<b>🔑 Опыт, которому можно доверять</b>\n"
     "У нас более 5 лет игры и 2 года профессиональных сопровождений.\n\n"
@@ -50,7 +70,7 @@ ESCORT_PRODUCTS: list[Product] = [
         title="ПРЕМИУМ",
         description=(
             "<b>Сопровождение ПРЕМИУМ</b>\n"
-            "• Выдача 👜🧥🪖🔫\n"
+            f"{ESCORT_GEAR_LINE}"
             "• 25–30кк гаранта\n"
             "• 7–8 карта, как вы пожелаете\n"
             "• Вещи в конце сопровождения ❗️"
@@ -66,7 +86,7 @@ ESCORT_PRODUCTS: list[Product] = [
         title="ВИП",
         description=(
             "<b>Сопровождение ВИП</b>\n"
-            "• Выдача 👜🧥🪖🔫\n"
+            f"{ESCORT_GEAR_LINE}"
             "• 15–20кк гаранта\n"
             "• 7–8 карта, как вы пожелаете\n"
             "• Вещи в конце сопровождения ❗️"
@@ -82,7 +102,7 @@ ESCORT_PRODUCTS: list[Product] = [
         title="БАЗА",
         description=(
             "<b>Сопровождение БАЗА</b>\n"
-            "• Выдача 👜🧥🪖🔫\n"
+            f"{ESCORT_GEAR_LINE}"
             "• 10–12кк гаранта\n"
             "• 7–8 карта, как вы пожелаете\n"
             "• Вещи в конце сопровождения ❗️"
