@@ -58,11 +58,19 @@ except ImportError:
 
 from keyboards import (  # noqa: E402
     inline_confirm_order,
+    inline_escort_menu,
     inline_paycore,
     inline_product_list,
     inline_root_menu,
 )
-from shared.catalog import CATEGORIES, POPULAR_PRODUCTS, get_product  # noqa: E402
+from shared.catalog import (  # noqa: E402
+    CATEGORIES,
+    ESCORT_INFO_FULL,
+    ESCORT_INFO_SHORT,
+    POPULAR_PRODUCTS,
+    get_product,
+    reviews_url,
+)
 from shared.config import Settings, get_settings  # noqa: E402
 from shared.database import init_db, list_recent_orders, save_order  # noqa: E402
 from shared.paycore import (  # noqa: E402
@@ -267,21 +275,38 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
     async def cb_menu_info(q: CallbackQuery) -> None:
         ch = settings.channel_username.strip()
         site = settings.website_url.strip()
-        extra = []
+        rev = settings.reviews_url.strip() or reviews_url()
+        extra = [
+            f'📢 <a href="{rev}">Отзывы</a>',
+            f"Поддержка: {support}",
+        ]
         if ch:
-            extra.append(f"Канал: {ch}")
+            extra.insert(0, f"Канал: {ch}")
         if site:
-            extra.append(f"Сайт: {site}")
-        extra.append(f"Поддержка: {support}")
+            extra.insert(0, f"Сайт: {site}")
         await _edit_menu_message(
             q.message,
             f"💬 <b>Информация · {shop_name}</b>\n\n"
-            f"· Автовыдача 24/7\n"
-            f"· Оплата через PayCore\n"
-            f"· Сопровождение, буст и снаряжение Metro Royale\n\n"
+            f"· Сопровождение ПРЕМИУМ / ВИП / БАЗА\n"
+            f"· Буст и снаряжение Metro Royale\n"
+            f"· Оплата PayCore · 24/7\n\n"
             + "\n".join(extra),
             inline_root_menu(settings),
         )
+        await q.answer()
+
+    @dp.callback_query(F.data == "menu_escort_info")
+    async def cb_menu_escort_info(q: CallbackQuery) -> None:
+        text = ESCORT_INFO_FULL
+        markup = inline_escort_menu()
+        if q.message.photo:
+            await q.message.edit_caption(
+                caption=text,
+                reply_markup=markup,
+                parse_mode="HTML",
+            )
+        else:
+            await q.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         await q.answer()
 
     @dp.callback_query(F.data.startswith("cat_"))
@@ -292,9 +317,15 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
             await q.answer("Раздел не найден", show_alert=True)
             return
         title, desc, products = cat
-        items = [_format_product_line(p) for p in products]
-        text = f"{title}\n\n{desc}\n\nВыберите товар:"
-        markup = inline_product_list(items)
+
+        if cat_id == "escort":
+            text = f"{title}\n\n{desc}\n\n<b>Выберите тариф:</b>"
+            markup = inline_escort_menu()
+        else:
+            items = [_format_product_line(p) for p in products]
+            text = f"{title}\n\n{desc}\n\nВыберите товар:"
+            markup = inline_product_list(items)
+
         if q.message.photo:
             await q.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
         else:
@@ -316,12 +347,12 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
         price_line = (
             "Цена: <b>по согласованию</b>"
             if product.amount <= 0
-            else f"Цена: <b>{product.amount:g} {product.currency}</b>"
+            else f"Цена: <b>{int(product.amount)} ₽</b>"
         )
         hint = f"\n\n{product.extra_hint}" if product.extra_hint else ""
         await q.message.answer(
-            f"Вы выбрали: <b>{product.title}</b>\n"
-            f"{product.description}\n"
+            f"Вы выбрали: <b>{product.title}</b>\n\n"
+            f"{product.description}\n\n"
             f"{price_line}{hint}\n\n"
             f"Введите <b>Player ID</b> PUBG Mobile.\n"
             f"Отмена: /cancel",

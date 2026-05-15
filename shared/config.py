@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     channel_username: str = Field(default="", validation_alias="CHANNEL_USERNAME")
     website_url: str = Field(default="", validation_alias="WEBSITE_URL")
     metro_shop_url: str = Field(default="", validation_alias="METRO_SHOP_URL")
+    reviews_url: str = Field(
+        default="https://t.me/KotikexsMetroShopOtziv",
+        validation_alias="REVIEWS_URL",
+    )
     banner_path: str = Field(default="assets/banner.png", validation_alias="BANNER_PATH")
 
     paycore_api_base_url: str = Field(default="", validation_alias="PAYCORE_API_BASE_URL")

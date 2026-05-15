@@ -1,6 +1,35 @@
 from dataclasses import dataclass
 from typing import Optional
 
+REVIEWS_CHANNEL_URL = "https://t.me/KotikexsMetroShopOtziv"
+
+ESCORT_INFO_FULL = (
+    "<b>🔑 Опыт, которому можно доверять</b>\n"
+    "У нас более 5 лет игры и 2 года профессиональных сопровождений.\n\n"
+    "<b>🔥 Команда профи</b>\n"
+    "Только адекватные, опытные и сильные игроки без читов.\n\n"
+    "<b>🔎 Индивидуальный подход</b>\n"
+    "Уникальные тактики и стратегии для каждого клиента.\n\n"
+    "<b>Что вы получаете?</b>\n"
+    "🔥 <b>Гарантированный вынос</b>\n"
+    "🔅 <b>Полное сопровождение:</b> матч на 7–8 карте с максимальным выносом\n"
+    "🔅 <b>Дополнительный лут:</b> всё, что не сможете забрать — отдадим на базовой карте\n"
+    "🔅 <b>Шанс попасть в видео</b> в TikTok 🎥\n"
+    "🔅 <b>Поддержка:</b> можно взять друга бесплатно 🧡\n"
+    "🔅 <b>Гарантия результата:</b> вещи для выкладки; при потере лута — выдаём новые\n"
+    "🔅 <b>Максимальный вынос:</b> при нехватке лута — доп. матч или свои вещи\n\n"
+    "<b>🔥 Специальное предложение</b>\n"
+    "При заказе сопровождения — разбор тактик, приёмов и ответы на ваши вопросы ❗️\n\n"
+    f'➡️ <a href="{REVIEWS_CHANNEL_URL}">Канал с отзывами</a> ⬅️'
+)
+
+ESCORT_INFO_SHORT = (
+    "<b>🛡️ Заказать сопровождение</b>\n\n"
+    "ПРЕМИУМ · ВИП · БАЗА — выберите тариф ниже.\n"
+    "5+ лет в Metro · команда без читов · гарантированный вынос.\n\n"
+    f'<a href="{REVIEWS_CHANNEL_URL}">📢 Отзывы клиентов</a>'
+)
+
 
 @dataclass(frozen=True)
 class Product:
@@ -12,42 +41,56 @@ class Product:
     category: str
     popular: bool = False
     extra_hint: str = ""
+    button_style: str = "primary"
 
 
 ESCORT_PRODUCTS: list[Product] = [
     Product(
-        id="escort_1",
-        title="1 рейд",
-        description="Сопровождение в одном рейде Metro Royale",
-        amount=199.0,
-        currency="RUB",
-        category="escort",
-    ),
-    Product(
-        id="escort_5",
-        title="5 рейдов",
-        description="Пакет сопровождения — 5 вылазок с опытным игроком",
-        amount=799.0,
+        id="escort_premium",
+        title="ПРЕМИУМ",
+        description=(
+            "<b>Сопровождение ПРЕМИУМ</b>\n"
+            "• Выдача 👜🧥🪖🔫\n"
+            "• 25–30кк гаранта\n"
+            "• 7–8 карта, как вы пожелаете\n"
+            "• Вещи в конце сопровождения ❗️"
+        ),
+        amount=550.0,
         currency="RUB",
         category="escort",
         popular=True,
-    ),
-    Product(
-        id="escort_10",
-        title="10 рейдов",
-        description="Максимальный пакет сопровождения",
-        amount=1399.0,
-        currency="RUB",
-        category="escort",
+        button_style="danger",
     ),
     Product(
         id="escort_vip",
-        title="VIP сопровождение",
-        description="Индивидуальные условия и расписание",
-        amount=0.0,
+        title="ВИП",
+        description=(
+            "<b>Сопровождение ВИП</b>\n"
+            "• Выдача 👜🧥🪖🔫\n"
+            "• 15–20кк гаранта\n"
+            "• 7–8 карта, как вы пожелаете\n"
+            "• Вещи в конце сопровождения ❗️"
+        ),
+        amount=350.0,
         currency="RUB",
         category="escort",
-        extra_hint="Укажите ранг, время игры и пожелания.",
+        popular=True,
+        button_style="primary",
+    ),
+    Product(
+        id="escort_base",
+        title="БАЗА",
+        description=(
+            "<b>Сопровождение БАЗА</b>\n"
+            "• Выдача 👜🧥🪖🔫\n"
+            "• 10–12кк гаранта\n"
+            "• 7–8 карта, как вы пожелаете\n"
+            "• Вещи в конце сопровождения ❗️"
+        ),
+        amount=230.0,
+        currency="RUB",
+        category="escort",
+        button_style="success",
     ),
 ]
 
@@ -144,7 +187,7 @@ GEAR_PRODUCTS: list[Product] = [
 CATEGORIES: dict[str, tuple[str, str, list[Product]]] = {
     "escort": (
         "🛡️ Сопровождение",
-        "Опытный игрок ведёт вас по рейдам Metro Royale",
+        ESCORT_INFO_SHORT,
         ESCORT_PRODUCTS,
     ),
     "boost": (
@@ -167,3 +210,6 @@ _BY_ID: dict[str, Product] = {p.id: p for p in _ALL}
 
 def get_product(product_id: str) -> Optional[Product]:
     return _BY_ID.get(product_id)
+
+def reviews_url() -> str:
+    return REVIEWS_CHANNEL_URL
