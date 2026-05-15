@@ -318,13 +318,13 @@ export async function startBot() {
 
     if (product.category === "escort") {
       const price = product.amount > 0 ? Math.trunc(product.amount) : null;
-      const { text, entities } = buildEscortPickMessage({
+      const text = buildEscortPickMessage({
         title: product.title,
         productId: product.id,
         priceRub: price,
         extraHint: product.extra_hint,
       });
-      await ctx.reply(text, { entities });
+      await ctx.reply(text, { parse_mode: "HTML" });
     } else {
       const priceLine =
         product.amount <= 0
@@ -474,6 +474,10 @@ export async function startBot() {
         console.warn(`[metro-shop] Не удалось уведомить админа ${adminId}`);
       }
     }
+  });
+
+  bot.catch((err) => {
+    console.error("[metro-shop] Ошибка обработки update:", err.error ?? err);
   });
 
   const me = await bot.api.getMe();
