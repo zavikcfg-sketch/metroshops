@@ -156,6 +156,10 @@ export function createAdminApp() {
     res.json({ items: listUsers(500) });
   });
 
+  app.get("/health", (req, res) => {
+    res.json({ ok: true, service: "metro-shop-admin" });
+  });
+
   app.get("/", (req, res) => {
     res.sendFile(path.join(WEB, "index.html"));
   });

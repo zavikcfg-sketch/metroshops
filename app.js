@@ -1,10 +1,9 @@
 /**
- * Точка входа Bothost / Docker: node app.js
- * Запускает админку (Express) и Telegram-бота (Grammy).
+ * Telegram-бот (long polling). Админка — http-wrapper.js или start.sh.
  */
-import { main } from "./src/index.js";
+import { mainBot } from "./src/index.js";
 
-main().catch((err) => {
+mainBot().catch((err) => {
   console.error("[metro-shop] Fatal:", err);
   process.exit(1);
 });

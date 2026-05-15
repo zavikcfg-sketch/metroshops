@@ -5,9 +5,10 @@
   "type": "module",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
+    "start": "sh start.sh",
     "bot": "node app.js",
-    "admin": "node -e \"import('./src/adminServer.js').then(m=>m.startAdminServer())\""
+    "admin": "node http-wrapper.js",
+    "dev": "node -e \"import('./src/index.js').then(m=>m.main())\""
   },
   "engines": {
     "node": ">=20"
