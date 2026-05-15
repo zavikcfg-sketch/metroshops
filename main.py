@@ -73,6 +73,7 @@ from shared.catalog import (  # noqa: E402
 )
 from shared.config import Settings, get_settings  # noqa: E402
 from shared.database import init_db, list_recent_orders, save_order  # noqa: E402
+from shared.banner import ensure_banner  # noqa: E402
 from shared.custom_emoji import build_escort_pick_message  # noqa: E402
 from shared.paycore import (  # noqa: E402
     PayCoreNotConfiguredError,
@@ -104,11 +105,14 @@ def _new_order_id() -> str:
 
 def _welcome_caption(shop_name: str) -> str:
     return (
-        f"👋 Добро пожаловать в магазин <b>{shop_name}</b>!\n\n"
-        f"🚇 PUBG Mobile · Metro Royale\n"
-        f"МЫ РАБОТАЕМ НЕПРЕРЫВНО — 24/7 ✅\n"
-        f"Быстрая выдача после оплаты через PayCore.\n\n"
-        f"Используйте меню ниже для навигации:"
+        f"👋 <b>Добро пожаловать в {shop_name}!</b>\n\n"
+        f"🚇 <b>Самый качественный Metro Shop</b> для PUBG Mobile · Metro Royale\n\n"
+        f"🛡️ Сопровождение ПРЕМИУМ / ВИП / БАЗА\n"
+        f"⚡ Буст ранга и фарм · 🔫 Снаряжение под ключ\n\n"
+        f"✅ Работаем <b>24/7</b> — без выходных и задержек\n"
+        f"💳 Оплата и выдача через <b>PayCore</b>\n"
+        f"🏆 Профи-команда · гарантированный вынос · честные цены\n\n"
+        f"Выберите раздел в меню ниже 👇"
     )
 
 
@@ -128,10 +132,10 @@ async def _edit_menu_message(
 
 
 async def send_welcome(bot: Bot, chat_id: int, settings: Settings) -> None:
-    shop_name = settings.shop_name.strip() or "Metro Shop"
+    shop_name = settings.shop_name.strip() or "WIXYEZ Metro Shop"
     caption = _welcome_caption(shop_name)
     markup = inline_root_menu(settings)
-    banner = settings.banner_file()
+    banner = ensure_banner(settings.banner_file())
 
     if banner.is_file():
         await bot.send_photo(
@@ -144,7 +148,7 @@ async def send_welcome(bot: Bot, chat_id: int, settings: Settings) -> None:
     else:
         await bot.send_message(
             chat_id,
-            caption + "\n\n<i>Добавьте баннер: python scripts/generate_banner.py</i>",
+            caption,
             reply_markup=markup,
             parse_mode="HTML",
         )
@@ -518,6 +522,7 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
 async def run_bot() -> None:
     init_db()
     settings = get_settings()
+    ensure_banner(settings.banner_file())
     token = settings.resolve_token()
     if not token:
         logger.error("Задайте TELEGRAM_BOT_TOKEN в .env")

@@ -28,7 +28,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN_FILE", "BOT_TOKEN_FILE"),
     )
     admin_ids: str = Field(default="", validation_alias="ADMIN_IDS")
-    shop_name: str = Field(default="WIXYEZ Metro Shop", validation_alias="SHOP_NAME")
+    shop_name: str = Field(
+        default="WIXYEZ METRO SHOP",
+        validation_alias="SHOP_NAME",
+    )
     support_contact: str = Field(default="@your_support", validation_alias="SUPPORT_CONTACT")
     channel_username: str = Field(default="", validation_alias="CHANNEL_USERNAME")
     website_url: str = Field(default="", validation_alias="WEBSITE_URL")
