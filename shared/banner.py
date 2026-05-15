@@ -9,7 +9,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BANNER_VERSION = "3"
+BANNER_VERSION = "4"
 _ROOT = Path(__file__).resolve().parent.parent
 _FONT_DIR = _ROOT / "assets" / "fonts"
 _FONT_FILE = _FONT_DIR / "DejaVuSans-Bold.ttf"
@@ -155,7 +155,7 @@ def _draw_uc_coins(draw, x: int, y: int, font) -> None:
             outline=(230, 200, 255, 220),
             width=2,
         )
-        draw.text((x + dx + 7, y + 6), "UC", fill=(255, 255, 255, 230), font=font)
+        draw.text((x + dx + 6, y + 6), "MC", fill=(255, 255, 255, 230), font=font)
 
 
 def generate_banner(path: Path) -> bool:
@@ -174,26 +174,29 @@ def generate_banner(path: Path) -> bool:
     _draw_metro_floor(draw, w, h)
     _draw_moon(draw, 930, 120, 95)
     font_small = _load_font(18)
-    _draw_uc_coins(draw, 880, 380, font_small)
+    _draw_uc_coins(draw, 850, 200, font_small)
+    _draw_uc_coins(draw, 980, 320, font_small)
 
-    _draw_plaque(draw, 52, 175, 560, 150)
-    _draw_gear_icons(draw, 620, 140)
+    _draw_gear_icons(draw, 40, 320)
+    _draw_uc_coins(draw, 120, 480, font_small)
+    _draw_uc_coins(draw, 200, 500, font_small)
 
-    font_title = _load_font(46)
     font_sub = _load_font(26)
     font_tag = _load_font(22)
-    title = "WIXYEZ METRO SHOP"
-    tx, ty = 82, 205
-    for dx, dy in ((3, 3), (-2, -2)):
-        draw.text((tx + dx, ty + dy), title, fill=(60, 15, 130, 255), font=font_title)
-    draw.text((tx, ty), title, fill=(252, 248, 255, 255), font=font_title)
+    _draw_plaque(draw, 320, 100, 540, 220)
+    font_logo = _load_font(52)
+    font_logo2 = _load_font(38)
+    draw.text((380, 155), "WIXYEZ", fill=(220, 215, 235, 255), font=font_logo)
+    draw.text((380, 215), "METRO SHOP", fill=(180, 160, 220, 255), font=font_logo2)
+
+    tx, ty = 52, 48
+    draw.text((tx, ty), "PUBG MOBILE", fill=(200, 180, 240, 255), font=font_small)
     draw.text(
-        (82, 268),
+        (tx, ty + 28),
         "Самый качественный Metro Shop",
         fill=(210, 190, 245, 255),
         font=font_sub,
     )
-    draw.text((82, 305), "PUBG Mobile · Metro Royale", fill=(170, 150, 220, 255), font=font_small)
 
     draw.rounded_rectangle(
         [52, 400, 700, 468],

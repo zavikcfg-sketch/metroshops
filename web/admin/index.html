@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Metro Shop Admin</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="logo">Metro<span>Shop</span></div>
+      <h1>Вход в админку</h1>
+      <p>Панель управления WIXYEZ METRO SHOP BOT</p>
+      <input id="login-password" type="password" placeholder="Пароль администратора" />
+      <button id="login-btn" class="btn btn-primary">Войти</button>
+      <p id="login-error" class="error hidden"></p>
+    </div>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="avatar-mini">M</div>
+        <div>
+          <strong id="sidebar-name">WIXYEZ</strong>
+          <span id="sidebar-status">Активно: 1/1 ботов</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#home" data-page="home" class="nav-link active">Главная</a>
+        <a href="#bots" data-page="bots" class="nav-link">Боты</a>
+        <a href="#products" data-page="products" class="nav-link">Товары</a>
+        <a href="#markups" data-page="markups" class="nav-link">Наценки</a>
+        <a href="#wallet" data-page="wallet" class="nav-link">Кошелёк</a>
+        <a href="#promos" data-page="promos" class="nav-link">Промокоды</a>
+        <a href="#invoices" data-page="invoices" class="nav-link">Инвойсы</a>
+        <a href="#stats" data-page="stats" class="nav-link">Статистика</a>
+        <a href="#users" data-page="users" class="nav-link">Пользователи</a>
+        <a href="#help" data-page="help" class="nav-link">Помощь</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="logo">Metro<span>Shop</span></div>
+        <button id="logout-btn" class="btn btn-ghost">Выйти из аккаунта</button>
+      </header>
+
+      <section id="page-home" class="page">
+        <div class="welcome-card">
+          <div class="wave">👋</div>
+          <h2>Добро пожаловать, <span id="welcome-name">WIXYEZ</span>!</h2>
+          <p>Управляйте товарами Metro Royale, промокодами и заказами вашего бота.</p>
+          <div class="welcome-actions">
+            <a href="#products" class="btn btn-primary">Перейти к товарам</a>
+            <a href="#help" class="btn btn-ghost">Помощь</a>
+          </div>
+        </div>
+        <div class="stats-grid" id="home-stats"></div>
+      </section>
+
+      <section id="page-bots" class="page hidden">
+        <h1>Управление ботами</h1>
+        <div class="card bot-card">
+          <h3>WIXYEZ METRO SHOP BOT</h3>
+          <p class="muted" id="bot-username">@wixyezmetroshop_bot</p>
+          <span class="badge badge-green">Работает</span>
+          <p class="muted">Бот: <code>python main.py</code></p>
+        </div>
+      </section>
+
+      <section id="page-products" class="page hidden">
+        <div class="page-head">
+          <h1>Товары</h1>
+          <div>
+            <button id="refresh-products" class="btn btn-ghost">Обновить</button>
+            <button id="add-product-btn" class="btn btn-primary">+ Добавить</button>
+          </div>
+        </div>
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Название</th>
+                <th>Категория</th>
+                <th>Цена</th>
+                <th>Популярное</th>
+                <th>Активен</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="products-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-markups" class="page hidden">
+        <h1>Категории в боте</h1>
+        <p class="muted">Включите или отключите разделы меню.</p>
+        <div id="categories-list" class="toggle-list"></div>
+      </section>
+
+      <section id="page-wallet" class="page hidden">
+        <h1>Кошелёк</h1>
+        <div class="card wallet-card">
+          <p class="muted">Остаток на <span id="wallet-date"></span></p>
+          <h2 id="wallet-rub">0 ₽</h2>
+          <p class="muted">Подключите PayCore в .env</p>
+          <button class="btn btn-ghost" disabled>Запросить вывод</button>
+        </div>
+      </section>
+
+      <section id="page-promos" class="page hidden">
+        <div class="page-head">
+          <h1>Промокоды</h1>
+          <button id="add-promo-btn" class="btn btn-primary">+ Добавить</button>
+        </div>
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Код</th>
+                <th>%</th>
+                <th>Лимит</th>
+                <th>Осталось</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="promos-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-invoices" class="page hidden">
+        <div class="page-head">
+          <h1>Инвойсы</h1>
+          <button id="refresh-orders" class="btn btn-ghost">Обновить</button>
+        </div>
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Дата</th>
+                <th>Товар</th>
+                <th>Сумма</th>
+                <th>Player ID</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody id="orders-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-stats" class="page hidden">
+        <h1>Статистика</h1>
+        <div class="stats-grid" id="stats-grid"></div>
+      </section>
+
+      <section id="page-users" class="page hidden">
+        <h1>Пользователи</h1>
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Telegram ID</th>
+                <th>Username</th>
+                <th>Заказов</th>
+                <th>Сумма</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-help" class="page hidden">
+        <h1>Помощь</h1>
+        <div class="card">
+          <p>Бот: <code>python main.py</code> · Админка: <code>python admin_server.py</code></p>
+          <p>Пароль: <code>ADMIN_PASSWORD</code> в .env</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="product-modal" class="modal">
+    <form id="product-form" class="modal-body">
+      <h3 id="product-modal-title">Новый товар</h3>
+      <input type="hidden" name="edit_id" />
+      <label>Название<input name="title" required /></label>
+      <label>Категория
+        <select name="category">
+          <option value="escort">Сопровождение</option>
+          <option value="boost">Буст</option>
+          <option value="gear">Снаряжение</option>
+        </select>
+      </label>
+      <label>Цена (₽)<input name="amount" type="number" min="0" step="1" /></label>
+      <label>Описание<textarea name="description" rows="4"></textarea></label>
+      <label>Стиль кнопки
+        <select name="button_style">
+          <option value="primary">Синий</option>
+          <option value="success">Зелёный</option>
+          <option value="danger">Красный</option>
+        </select>
+      </label>
+      <label class="checkbox"><input name="popular" type="checkbox" /> Популярное</label>
+      <label class="checkbox"><input name="active" type="checkbox" checked /> Активен</label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="promo-modal" class="modal">
+    <form id="promo-form" class="modal-body">
+      <h3>Новый промокод</h3>
+      <label>Код<input name="code" required /></label>
+      <label>% скидки<input name="discount_percent" type="number" min="1" max="100" required /></label>
+      <label>Лимит<input name="use_limit" type="number" min="1" value="10" /></label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Отмена</button>
+        <button type="submit" class="btn btn-primary">Создать</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/admin-panel.js"></script>
+</body>
+</html>

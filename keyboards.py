@@ -4,8 +4,9 @@ from typing import Literal
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from shared.catalog import ESCORT_PRODUCTS, REVIEWS_CHANNEL_URL, get_product
+from shared.catalog import REVIEWS_CHANNEL_URL
 from shared.config import Settings
+from shared.repository import get_product, list_products
 
 ButtonStyle = Literal["primary", "success", "danger"]
 
@@ -45,11 +46,7 @@ def inline_root_menu(settings: Settings) -> InlineKeyboardMarkup:
             _btn("🔫 Снаряжение", callback_data="cat_gear", style="primary"),
         ],
         [
-            _btn(
-                "Самый качественный MetroShop ↗",
-                url=metro,
-                style="danger",
-            ),
+            _btn("Самый качественный MetroShop ↗", url=metro, style="danger"),
         ],
     ]
 
@@ -62,9 +59,7 @@ def inline_root_menu(settings: Settings) -> InlineKeyboardMarkup:
         )
     else:
         rows.append(
-            [
-                _btn("🛡️ Заказать сопровождение", callback_data="cat_escort", style="primary"),
-            ],
+            [_btn("🛡️ Заказать сопровождение", callback_data="cat_escort", style="primary")],
         )
 
     rows.extend(
@@ -74,18 +69,10 @@ def inline_root_menu(settings: Settings) -> InlineKeyboardMarkup:
                 _btn("🎖 Популярное", callback_data="menu_popular", style="primary"),
             ],
             [
-                _btn(
-                    "👥 Реферальная система",
-                    callback_data="menu_referral",
-                    style="success",
-                ),
+                _btn("👥 Реферальная система", callback_data="menu_referral", style="success"),
             ],
-            [
-                _btn("💬 Информация", callback_data="menu_info", style="danger"),
-            ],
-            [
-                _btn("📢 Канал с отзывами ↗", url=reviews, style="primary"),
-            ],
+            [_btn("💬 Информация", callback_data="menu_info", style="danger")],
+            [_btn("📢 Канал с отзывами ↗", url=reviews, style="primary")],
         ],
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -93,31 +80,30 @@ def inline_root_menu(settings: Settings) -> InlineKeyboardMarkup:
 
 def inline_escort_menu() -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    for product in ESCORT_PRODUCTS:
-        price = int(product.amount)
+    for product in list_products(active_only=True, category="escort"):
+        price = int(product.amount) if product.amount > 0 else 0
+        label = (
+            f"{product.title} — {price} ₽"
+            if price
+            else f"{product.title} — по запросу"
+        )
         style = product.button_style
         if style not in ("primary", "success", "danger"):
             style = "primary"
         rows.append(
             [
                 _btn(
-                    f"{product.title} — {price} ₽",
+                    label,
                     callback_data=f"pick_{product.id}",
                     style=style,  # type: ignore[arg-type]
                 ),
             ],
         )
     rows.append(
-        [
-            _btn("📖 Подробнее о сопровождении", callback_data="menu_escort_info", style="primary"),
-        ],
+        [_btn("📖 Подробнее о сопровождении", callback_data="menu_escort_info", style="primary")],
     )
-    rows.append(
-        [_btn("📢 Отзывы ↗", url=REVIEWS_CHANNEL_URL, style="primary")],
-    )
-    rows.append(
-        [_btn("◀️ В главное меню", callback_data="menu_root", style="danger")],
-    )
+    rows.append([_btn("📢 Отзывы ↗", url=REVIEWS_CHANNEL_URL, style="primary")])
+    rows.append([_btn("◀️ В главное меню", callback_data="menu_root", style="danger")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -131,12 +117,8 @@ def inline_product_list(
         style: ButtonStyle | None = "primary"
         if product and product.button_style in ("primary", "success", "danger"):
             style = product.button_style  # type: ignore[assignment]
-        rows.append(
-            [_btn(label, callback_data=f"pick_{product_id}", style=style)],
-        )
-    rows.append(
-        [_btn("◀️ В главное меню", callback_data=back_callback, style="danger")],
-    )
+        rows.append([_btn(label, callback_data=f"pick_{product_id}", style=style)])
+    rows.append([_btn("◀️ В главное меню", callback_data=back_callback, style="danger")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

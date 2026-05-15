@@ -1,3 +1,4 @@
+import os
 import warnings
 from functools import lru_cache
 from pathlib import Path
@@ -28,6 +29,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN_FILE", "BOT_TOKEN_FILE"),
     )
     admin_ids: str = Field(default="", validation_alias="ADMIN_IDS")
+    admin_password: str = Field(default="", validation_alias="ADMIN_PASSWORD")
+    admin_port: int = Field(default=8080, validation_alias="ADMIN_PORT")
+
+    def resolved_admin_port(self) -> int:
+        port = os.environ.get("PORT", "").strip()
+        if port.isdigit():
+            return int(port)
+        return self.admin_port
+    telegram_bot_username: str = Field(default="", validation_alias="TELEGRAM_BOT_USERNAME")
     shop_name: str = Field(
         default="WIXYEZ METRO SHOP",
         validation_alias="SHOP_NAME",
@@ -75,6 +85,12 @@ class Settings(BaseSettings):
             if part.isdigit():
                 result.append(int(part))
         return result
+
+    def data_dir(self) -> Path:
+        raw = os.environ.get("DATA_DIR", "").strip()
+        if raw:
+            return Path(raw)
+        return _PROJECT_ROOT / "data"
 
     def banner_file(self) -> Path:
         p = Path(self.banner_path.strip() or "assets/banner.png")

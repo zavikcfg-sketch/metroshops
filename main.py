@@ -63,16 +63,17 @@ from keyboards import (  # noqa: E402
     inline_product_list,
     inline_root_menu,
 )
-from shared.catalog import (  # noqa: E402
-    CATEGORIES,
-    ESCORT_INFO_FULL,
-    ESCORT_INFO_SHORT,
-    POPULAR_PRODUCTS,
-    get_product,
-    reviews_url,
-)
+from shared.catalog import ESCORT_INFO_FULL, ESCORT_INFO_SHORT, reviews_url  # noqa: E402
 from shared.config import Settings, get_settings  # noqa: E402
-from shared.database import init_db, list_recent_orders, save_order  # noqa: E402
+from shared.repository import (  # noqa: E402
+    get_categories_for_bot,
+    get_product,
+    init_db,
+    list_popular_products,
+    list_recent_orders,
+    register_user,
+    save_order,
+)
 from shared.banner import ensure_banner  # noqa: E402
 from shared.custom_emoji import build_escort_pick_message  # noqa: E402
 from shared.paycore import (  # noqa: E402
@@ -161,6 +162,12 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
 
     @dp.message(Command("start"))
     async def cmd_start(message: Message) -> None:
+        if message.from_user:
+            register_user(
+                message.from_user.id,
+                message.from_user.username,
+                message.from_user.first_name,
+            )
         await send_welcome(message.bot, message.chat.id, settings)
 
     @dp.message(Command("help", "menu"))
@@ -244,7 +251,7 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
 
     @dp.callback_query(F.data == "menu_popular")
     async def cb_menu_popular(q: CallbackQuery) -> None:
-        items = [_format_product_line(p) for p in POPULAR_PRODUCTS]
+        items = [_format_product_line(p) for p in list_popular_products()]
         text = "🎖 <b>Популярное</b>\n\nХиты Metro Royale — выберите товар:"
         if q.message.photo:
             await q.message.edit_caption(
@@ -317,7 +324,7 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
     @dp.callback_query(F.data.startswith("cat_"))
     async def cb_category(q: CallbackQuery) -> None:
         cat_id = q.data.removeprefix("cat_")
-        cat = CATEGORIES.get(cat_id)
+        cat = get_categories_for_bot().get(cat_id)
         if not cat:
             await q.answer("Раздел не найден", show_alert=True)
             return

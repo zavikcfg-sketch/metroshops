@@ -66,6 +66,7 @@ class Product:
     popular: bool = False
     extra_hint: str = ""
     button_style: str = "primary"
+    active: bool = True
 
 
 ESCORT_PRODUCTS: list[Product] = [
