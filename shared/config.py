@@ -28,12 +28,18 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN_FILE", "BOT_TOKEN_FILE"),
     )
     admin_ids: str = Field(default="", validation_alias="ADMIN_IDS")
+    shop_name: str = Field(default="WIXYEZ Metro Shop", validation_alias="SHOP_NAME")
+    support_contact: str = Field(default="@your_support", validation_alias="SUPPORT_CONTACT")
     channel_username: str = Field(default="", validation_alias="CHANNEL_USERNAME")
-    shop_name: str = Field(default="Metro Shop", validation_alias="SHOP_NAME")
-    support_contact: str = Field(
-        default="@your_support",
-        validation_alias="SUPPORT_CONTACT",
-    )
+    website_url: str = Field(default="", validation_alias="WEBSITE_URL")
+    metro_shop_url: str = Field(default="", validation_alias="METRO_SHOP_URL")
+    banner_path: str = Field(default="assets/banner.png", validation_alias="BANNER_PATH")
+
+    paycore_api_base_url: str = Field(default="", validation_alias="PAYCORE_API_BASE_URL")
+    paycore_public_key: str = Field(default="", validation_alias="PAYCORE_PUBLIC_KEY")
+    paycore_payment_service: str = Field(default="", validation_alias="PAYCORE_PAYMENT_SERVICE")
+    paycore_currency: str = Field(default="RUB", validation_alias="PAYCORE_CURRENCY")
+    paycore_mode: str = Field(default="demo", validation_alias="PAYCORE_MODE")
 
     @field_validator("telegram_bot_token", mode="before")
     @classmethod
@@ -62,6 +68,21 @@ class Settings(BaseSettings):
             if part.isdigit():
                 result.append(int(part))
         return result
+
+    def banner_file(self) -> Path:
+        p = Path(self.banner_path.strip() or "assets/banner.png")
+        if p.is_absolute():
+            return p
+        return _PROJECT_ROOT / p
+
+    def paycore_enabled(self) -> bool:
+        if self.paycore_mode.strip().lower() == "demo":
+            return True
+        return bool(
+            self.paycore_public_key.strip()
+            and self.paycore_api_base_url.strip()
+            and self.paycore_payment_service.strip(),
+        )
 
 
 @lru_cache

@@ -10,50 +10,97 @@ class Product:
     amount: float
     currency: str
     category: str
-    needs_pubg_id: bool = True
+    popular: bool = False
     extra_hint: str = ""
 
 
-METRO_CASH: list[Product] = [
+ESCORT_PRODUCTS: list[Product] = [
     Product(
-        id="cash_100k",
-        title="100 000 Metro Cash",
-        description="Пополнение Metro Cash на ваш аккаунт",
-        amount=149.0,
+        id="escort_1",
+        title="1 рейд",
+        description="Сопровождение в одном рейде Metro Royale",
+        amount=199.0,
         currency="RUB",
-        category="cash",
+        category="escort",
     ),
     Product(
-        id="cash_500k",
-        title="500 000 Metro Cash",
-        description="Пополнение Metro Cash на ваш аккаунт",
-        amount=599.0,
+        id="escort_5",
+        title="5 рейдов",
+        description="Пакет сопровождения — 5 вылазок с опытным игроком",
+        amount=799.0,
         currency="RUB",
-        category="cash",
+        category="escort",
+        popular=True,
     ),
     Product(
-        id="cash_1m",
-        title="1 000 000 Metro Cash",
-        description="Пополнение Metro Cash на ваш аккаунт",
-        amount=1099.0,
+        id="escort_10",
+        title="10 рейдов",
+        description="Максимальный пакет сопровождения",
+        amount=1399.0,
         currency="RUB",
-        category="cash",
+        category="escort",
+    ),
+    Product(
+        id="escort_vip",
+        title="VIP сопровождение",
+        description="Индивидуальные условия и расписание",
+        amount=0.0,
+        currency="RUB",
+        category="escort",
+        extra_hint="Укажите ранг, время игры и пожелания.",
     ),
 ]
 
-METRO_GEAR: list[Product] = [
+BOOST_PRODUCTS: list[Product] = [
+    Product(
+        id="boost_rank",
+        title="Буст ранга Metro",
+        description="Прокачка ранга в Metro Royale",
+        amount=999.0,
+        currency="RUB",
+        category="boost",
+        popular=True,
+    ),
+    Product(
+        id="boost_cash_1h",
+        title="Фарм Metro Cash (1 ч)",
+        description="Вынос Metro Cash на ваш склад",
+        amount=599.0,
+        currency="RUB",
+        category="boost",
+    ),
+    Product(
+        id="boost_loot_1h",
+        title="Фарм лута (1 ч)",
+        description="Фарм ценного лута в Metro Royale",
+        amount=549.0,
+        currency="RUB",
+        category="boost",
+    ),
+    Product(
+        id="boost_custom",
+        title="Индивидуальный буст",
+        description="Любая задача — оценим вручную",
+        amount=0.0,
+        currency="RUB",
+        category="boost",
+        extra_hint="Опишите цель: ранг, лут, сроки.",
+    ),
+]
+
+GEAR_PRODUCTS: list[Product] = [
     Product(
         id="gear_steel_set",
-        title="Steel Front (полный сет)",
+        title="Steel Front (сет)",
         description="Шлем + броня + рюкзак Steel Front",
         amount=399.0,
         currency="RUB",
         category="gear",
-        extra_hint="Укажите желаемый уровень усиления (если важно).",
+        popular=True,
     ),
     Product(
         id="gear_cobalt_set",
-        title="Cobalt (полный сет)",
+        title="Cobalt (сет)",
         description="Шлем + броня + рюкзак Cobalt",
         amount=449.0,
         currency="RUB",
@@ -62,7 +109,7 @@ METRO_GEAR: list[Product] = [
     Product(
         id="gear_armor6",
         title="Броня 6 lvl",
-        description="Бронежилет 6 уровня для Metro Royale",
+        description="Бронежилет 6 уровня",
         amount=299.0,
         currency="RUB",
         category="gear",
@@ -70,7 +117,7 @@ METRO_GEAR: list[Product] = [
     Product(
         id="gear_mk14",
         title="Mk14 (Metro)",
-        description="Снайперская винтовка Mk14 с вложениями по запросу",
+        description="Mk14 с вложениями по запросу",
         amount=349.0,
         currency="RUB",
         category="gear",
@@ -78,69 +125,44 @@ METRO_GEAR: list[Product] = [
     Product(
         id="gear_amr",
         title="AMR",
-        description="AMR — редкое метро-оружие",
+        description="Редкое метро-оружие AMR",
         amount=499.0,
         currency="RUB",
         category="gear",
     ),
-]
-
-METRO_SERVICES: list[Product] = [
     Product(
-        id="svc_escort",
-        title="Сопровождение 5 рейдов",
-        description="Опытный игрок сопровождает в Metro Royale",
-        amount=799.0,
-        currency="RUB",
-        category="services",
-        extra_hint="Напишите ваш ранг и удобное время игры.",
-    ),
-    Product(
-        id="svc_farm",
-        title="Фарм лута (1 час)",
-        description="Вынос ценного лута на ваш склад",
-        amount=599.0,
-        currency="RUB",
-        category="services",
-    ),
-    Product(
-        id="svc_custom",
-        title="Индивидуальный заказ",
-        description="Любой предмет Metro — оценим вручную",
+        id="gear_custom",
+        title="Другой предмет",
+        description="Любое снаряжение Metro — под заказ",
         amount=0.0,
         currency="RUB",
-        category="services",
-        extra_hint="Опишите, что нужно: предмет, количество, бюджет.",
-    ),
-]
-
-BUY_LOOT: list[Product] = [
-    Product(
-        id="buy_any",
-        title="Скупка лута",
-        description="Продайте нам добычу из Metro Royale",
-        amount=0.0,
-        currency="RUB",
-        category="buy",
-        needs_pubg_id=True,
-        extra_hint=(
-            "Перечислите предметы и их состояние.\n"
-            "Приложите скриншоты в следующем сообщении."
-        ),
+        category="gear",
+        extra_hint="Название предмета, уровень усиления, бюджет.",
     ),
 ]
 
 CATEGORIES: dict[str, tuple[str, str, list[Product]]] = {
-    "cash": ("💰 Metro Cash", "Пополнение внутриигровой валюты Metro Royale", METRO_CASH),
-    "gear": ("🔫 Снаряжение", "Оружие и броня для рейдов", METRO_GEAR),
-    "services": ("🛡️ Услуги", "Сопровождение и фарм", METRO_SERVICES),
-    "buy": ("📦 Скупка лута", "Продайте нам ваш лут", BUY_LOOT),
+    "escort": (
+        "🛡️ Сопровождение",
+        "Опытный игрок ведёт вас по рейдам Metro Royale",
+        ESCORT_PRODUCTS,
+    ),
+    "boost": (
+        "⚡ Буст",
+        "Прокачка ранга, фарм Metro Cash и лута",
+        BOOST_PRODUCTS,
+    ),
+    "gear": (
+        "🔫 Снаряжение",
+        "Оружие и броня для Metro Royale",
+        GEAR_PRODUCTS,
+    ),
 }
 
-_BY_ID: dict[str, Product] = {}
-for _products in (METRO_CASH, METRO_GEAR, METRO_SERVICES, BUY_LOOT):
-    for _p in _products:
-        _BY_ID[_p.id] = _p
+_ALL: list[Product] = ESCORT_PRODUCTS + BOOST_PRODUCTS + GEAR_PRODUCTS
+POPULAR_PRODUCTS = [p for p in _ALL if p.popular]
+
+_BY_ID: dict[str, Product] = {p.id: p for p in _ALL}
 
 
 def get_product(product_id: str) -> Optional[Product]:

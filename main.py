@@ -1,5 +1,5 @@
 """
-PUBG Mobile Metro Shop — Telegram-бот.
+PUBG Mobile Metro Shop — Telegram-бот в стиле WIXYEZ / PayCore.
 
 Запуск: python main.py
 """
@@ -51,21 +51,25 @@ try:
     from aiogram.fsm.context import FSMContext
     from aiogram.fsm.state import State, StatesGroup
     from aiogram.fsm.storage.memory import MemoryStorage
-    from aiogram.types import CallbackQuery, Message
+    from aiogram.types import CallbackQuery, FSInputFile, Message
 except ImportError:
     logger.exception("Установите зависимости: pip install -r requirements.txt")
     raise
 
 from keyboards import (  # noqa: E402
-    inline_categories,
     inline_confirm_order,
+    inline_paycore,
     inline_product_list,
-    reply_cancel_only,
-    reply_main_menu,
+    inline_root_menu,
 )
-from shared.catalog import CATEGORIES, get_product  # noqa: E402
-from shared.config import get_settings  # noqa: E402
+from shared.catalog import CATEGORIES, POPULAR_PRODUCTS, get_product  # noqa: E402
+from shared.config import Settings, get_settings  # noqa: E402
 from shared.database import init_db, list_recent_orders, save_order  # noqa: E402
+from shared.paycore import (  # noqa: E402
+    PayCoreNotConfiguredError,
+    PayCoreRequestError,
+    create_payment_invoice,
+)
 
 
 class OrderFlow(StatesGroup):
@@ -89,93 +93,87 @@ def _new_order_id() -> str:
     return f"MS-{dt.datetime.now(dt.timezone.utc):%y%m%d}-{secrets.token_hex(3).upper()}"
 
 
-async def send_welcome(bot: Bot, chat_id: int, shop_name: str) -> None:
-    text = (
-        f"🚇 <b>{shop_name}</b>\n"
-        f"<i>PUBG Mobile · Metro Royale</i>\n\n"
-        f"Покупка Metro Cash, снаряжения и услуг для Metro Royale.\n"
-        f"Скупка лута — продайте добычу оператору.\n\n"
-        f"Выберите категорию в меню или нажмите «🛒 Каталог»."
+def _welcome_caption(shop_name: str) -> str:
+    return (
+        f"👋 Добро пожаловать в магазин <b>{shop_name}</b>!\n\n"
+        f"🚇 PUBG Mobile · Metro Royale\n"
+        f"МЫ РАБОТАЕМ НЕПРЕРЫВНО — 24/7 ✅\n"
+        f"Быстрая выдача после оплаты через PayCore.\n\n"
+        f"Используйте меню ниже для навигации:"
     )
-    await bot.send_message(
-        chat_id,
-        text,
-        reply_markup=reply_main_menu(),
-        parse_mode="HTML",
-    )
-    await bot.send_message(chat_id, "Категории:", reply_markup=inline_categories())
 
 
-def register_handlers(dp: Dispatcher, settings) -> None:
+async def _edit_menu_message(
+    message: Message,
+    text: str,
+    reply_markup,
+) -> None:
+    if message.photo:
+        await message.edit_caption(
+            caption=text,
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+        )
+    else:
+        await message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+
+
+async def send_welcome(bot: Bot, chat_id: int, settings: Settings) -> None:
+    shop_name = settings.shop_name.strip() or "Metro Shop"
+    caption = _welcome_caption(shop_name)
+    markup = inline_root_menu(settings)
+    banner = settings.banner_file()
+
+    if banner.is_file():
+        await bot.send_photo(
+            chat_id,
+            FSInputFile(banner),
+            caption=caption,
+            reply_markup=markup,
+            parse_mode="HTML",
+        )
+    else:
+        await bot.send_message(
+            chat_id,
+            caption + "\n\n<i>Добавьте баннер: python scripts/generate_banner.py</i>",
+            reply_markup=markup,
+            parse_mode="HTML",
+        )
+
+
+def register_handlers(dp: Dispatcher, settings: Settings) -> None:
     shop_name = settings.shop_name.strip() or "Metro Shop"
     admin_ids = settings.admin_id_list()
     support = settings.support_contact.strip() or "@your_support"
 
     @dp.message(Command("start"))
     async def cmd_start(message: Message) -> None:
-        await send_welcome(message.bot, message.chat.id, shop_name)
+        await send_welcome(message.bot, message.chat.id, settings)
 
     @dp.message(Command("help", "menu"))
     async def cmd_help(message: Message) -> None:
         await message.answer(
-            "Команды:\n"
-            "/start — главное меню\n"
-            "/help — справка\n"
-            "/cancel — отменить текущий заказ",
-            reply_markup=inline_categories(),
+            "Команды:\n/start — главное меню\n/help — справка\n/cancel — отменить заказ",
+            reply_markup=inline_root_menu(settings),
         )
 
     @dp.message(Command("cancel"))
     async def cmd_cancel(message: Message, state: FSMContext) -> None:
         await state.clear()
-        await message.answer("Заказ отменён.", reply_markup=reply_main_menu())
+        await message.answer("Заказ отменён.", reply_markup=inline_root_menu(settings))
 
-    @dp.message(F.text == "🛒 Каталог")
-    async def show_catalog(message: Message) -> None:
-        await message.answer("Выберите категорию:", reply_markup=inline_categories())
-
-    @dp.message(F.text == "ℹ️ Как купить")
-    async def how_to_buy(message: Message) -> None:
-        await message.answer(
-            f"<b>Как оформить заказ</b>\n\n"
-            f"1. Откройте «🛒 Каталог» и выберите товар.\n"
-            f"2. Введите <b>Player ID</b> из PUBG Mobile.\n"
-            f"3. Добавьте комментарий (ник, сервер, пожелания).\n"
-            f"4. Подтвердите заявку — оператор свяжется с вами.\n\n"
-            f"⚠️ Не передавайте пароль от аккаунта. Достаточно Player ID.\n"
-            f"Цены в каталоге — примерные, замените в <code>shared/catalog.py</code>.",
-            parse_mode="HTML",
-        )
-
-    @dp.message(F.text == "💬 Поддержка")
-    async def support_handler(message: Message) -> None:
-        ch = settings.channel_username.strip()
-        extra = f"\nКанал: {ch}" if ch else ""
-        await message.answer(
-            f"Поддержка: {support}{extra}\n\n"
-            f"Опишите вопрос одним сообщением — ответим в чате.",
-        )
-
-    @dp.message(F.text == "📋 Мои заказы")
-    async def my_orders(message: Message) -> None:
-        orders = [
-            o
-            for o in list_recent_orders(50)
-            if message.from_user and o.user_id == message.from_user.id
-        ]
-        if not orders:
-            await message.answer("У вас пока нет заявок. Оформите заказ через каталог.")
+    @dp.message(Command("promo"))
+    async def cmd_promo(message: Message) -> None:
+        parts = (message.text or "").split(maxsplit=1)
+        code = parts[1].strip() if len(parts) > 1 else ""
+        if not code:
+            await message.answer("Укажите код: /promo SUMMER2026")
             return
-        lines = []
-        for o in orders[:10]:
-            price = "по запросу" if o.amount <= 0 else f"{o.amount:g} {o.currency}"
-            lines.append(
-                f"• <b>{o.id}</b> — {o.product_title} ({price})\n"
-                f"  статус: {o.status}",
-            )
         await message.answer(
-            "<b>Ваши заявки:</b>\n\n" + "\n".join(lines),
+            f"Промокод <code>{code}</code> принят.\n"
+            f"Подключите проверку промокодов в коде или у оператора.",
             parse_mode="HTML",
+            reply_markup=inline_root_menu(settings),
         )
 
     @dp.message(Command("orders"))
@@ -194,17 +192,96 @@ def register_handlers(dp: Dispatcher, settings) -> None:
             lines.append(
                 f"<b>{o.id}</b> | {uname}\n"
                 f"{o.product_title} — {price}\n"
-                f"ID: <code>{o.pubg_id or '—'}</code> | {o.status}\n"
-                f"<i>{(o.comment or '')[:80]}</i>",
+                f"ID: <code>{o.pubg_id or '—'}</code> | {o.status}",
             )
         await message.answer(
             "<b>Последние заявки:</b>\n\n" + "\n\n".join(lines),
             parse_mode="HTML",
         )
 
+    @dp.callback_query(F.data == "menu_root")
+    async def cb_menu_root(q: CallbackQuery) -> None:
+        await _edit_menu_message(
+            q.message,
+            _welcome_caption(shop_name),
+            inline_root_menu(settings),
+        )
+        await q.answer()
+
     @dp.callback_query(F.data == "menu_categories")
     async def cb_menu_categories(q: CallbackQuery) -> None:
-        await q.message.edit_text("Выберите категорию:", reply_markup=inline_categories())
+        await _edit_menu_message(
+            q.message,
+            f"<b>{shop_name}</b>\n\n"
+            f"🛡️ Сопровождение · ⚡ Буст · 🔫 Снаряжение\n\n"
+            f"Выберите раздел:",
+            inline_root_menu(settings),
+        )
+        await q.answer()
+
+    @dp.callback_query(F.data == "menu_promo")
+    async def cb_menu_promo(q: CallbackQuery) -> None:
+        await _edit_menu_message(
+            q.message,
+            "🎁 <b>Промокоды</b>\n\n"
+            "Отправьте промокод командой:\n<code>/promo ВАШ_КОД</code>",
+            inline_root_menu(settings),
+        )
+        await q.answer()
+
+    @dp.callback_query(F.data == "menu_popular")
+    async def cb_menu_popular(q: CallbackQuery) -> None:
+        items = [_format_product_line(p) for p in POPULAR_PRODUCTS]
+        text = "🎖 <b>Популярное</b>\n\nХиты Metro Royale — выберите товар:"
+        if q.message.photo:
+            await q.message.edit_caption(
+                caption=text,
+                reply_markup=inline_product_list(items),
+                parse_mode="HTML",
+            )
+        else:
+            await q.message.edit_text(
+                text,
+                reply_markup=inline_product_list(items),
+                parse_mode="HTML",
+            )
+        await q.answer()
+
+    @dp.callback_query(F.data == "menu_referral")
+    async def cb_menu_referral(q: CallbackQuery) -> None:
+        me = await q.bot.get_me()
+        if not me or not me.username or not q.from_user:
+            await q.answer("У бота нет @username", show_alert=True)
+            return
+        link = f"https://t.me/{me.username}?start=ref_{q.from_user.id}"
+        await _edit_menu_message(
+            q.message,
+            "👥 <b>Реферальная система</b>\n\n"
+            f"Ваша ссылка:\n<code>{link}</code>\n\n"
+            "Приглашённые открывают бота по ней — бонус настраивается у оператора.",
+            inline_root_menu(settings),
+        )
+        await q.answer()
+
+    @dp.callback_query(F.data == "menu_info")
+    async def cb_menu_info(q: CallbackQuery) -> None:
+        ch = settings.channel_username.strip()
+        site = settings.website_url.strip()
+        extra = []
+        if ch:
+            extra.append(f"Канал: {ch}")
+        if site:
+            extra.append(f"Сайт: {site}")
+        extra.append(f"Поддержка: {support}")
+        await _edit_menu_message(
+            q.message,
+            f"💬 <b>Информация · {shop_name}</b>\n\n"
+            f"· Автовыдача 24/7\n"
+            f"· Оплата через PayCore\n"
+            f"· Сопровождение, буст и снаряжение Metro Royale\n\n"
+            + "\n".join(extra),
+            inline_root_menu(settings),
+        )
         await q.answer()
 
     @dp.callback_query(F.data.startswith("cat_"))
@@ -212,15 +289,16 @@ def register_handlers(dp: Dispatcher, settings) -> None:
         cat_id = q.data.removeprefix("cat_")
         cat = CATEGORIES.get(cat_id)
         if not cat:
-            await q.answer("Категория не найдена", show_alert=True)
+            await q.answer("Раздел не найден", show_alert=True)
             return
         title, desc, products = cat
         items = [_format_product_line(p) for p in products]
-        await q.message.edit_text(
-            f"<b>{title}</b>\n{desc}\n\nВыберите товар:",
-            reply_markup=inline_product_list(items),
-            parse_mode="HTML",
-        )
+        text = f"{title}\n\n{desc}\n\nВыберите товар:"
+        markup = inline_product_list(items)
+        if q.message.photo:
+            await q.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
+        else:
+            await q.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         await q.answer()
 
     @dp.callback_query(F.data.startswith("pick_"))
@@ -240,40 +318,26 @@ def register_handlers(dp: Dispatcher, settings) -> None:
             if product.amount <= 0
             else f"Цена: <b>{product.amount:g} {product.currency}</b>"
         )
-        hint = (
-            f"\n\n{product.extra_hint}"
-            if product.extra_hint
-            else ""
-        )
+        hint = f"\n\n{product.extra_hint}" if product.extra_hint else ""
         await q.message.answer(
             f"Вы выбрали: <b>{product.title}</b>\n"
             f"{product.description}\n"
             f"{price_line}{hint}\n\n"
-            f"Введите <b>Player ID</b> PUBG Mobile (цифры из профиля).\n"
-            f"Отмена: /cancel или «❌ Отменить заказ».",
+            f"Введите <b>Player ID</b> PUBG Mobile.\n"
+            f"Отмена: /cancel",
             parse_mode="HTML",
-            reply_markup=reply_cancel_only(),
         )
-
-    @dp.message(OrderFlow.waiting_pubg_id, F.text.in_({"❌ Отменить заказ"}))
-    @dp.message(OrderFlow.waiting_comment, F.text.in_({"❌ Отменить заказ"}))
-    async def cancel_during_flow(message: Message, state: FSMContext) -> None:
-        await state.clear()
-        await message.answer("Заказ отменён.", reply_markup=reply_main_menu())
 
     @dp.message(OrderFlow.waiting_pubg_id, F.text)
     async def process_pubg_id(message: Message, state: FSMContext) -> None:
         pubg_id = (message.text or "").strip()
         if not pubg_id.isdigit() or len(pubg_id) < 5:
-            await message.answer(
-                "Player ID обычно состоит только из цифр (минимум 5). Введите ещё раз.",
-            )
+            await message.answer("Player ID — только цифры (минимум 5). Введите ещё раз.")
             return
         await state.update_data(pubg_id=pubg_id)
         await state.set_state(OrderFlow.waiting_comment)
         await message.answer(
-            "Добавьте комментарий: ник в игре, сервер, пожелания.\n"
-            "Если нечего добавить — отправьте «-».",
+            "Комментарий: ник, сервер, пожелания.\nЕсли нечего — отправьте «-».",
         )
 
     @dp.message(OrderFlow.waiting_comment, F.text)
@@ -310,7 +374,7 @@ def register_handlers(dp: Dispatcher, settings) -> None:
     async def cb_order_cancel(q: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         await q.message.edit_text("Заказ отменён.")
-        await q.message.answer("Главное меню:", reply_markup=reply_main_menu())
+        await send_welcome(q.bot, q.message.chat.id, settings)
         await q.answer()
 
     @dp.callback_query(F.data == "order_confirm")
@@ -327,6 +391,28 @@ def register_handlers(dp: Dispatcher, settings) -> None:
         comment = data.get("comment", "")
         username = q.from_user.username
 
+        paycore_url: str | None = None
+        if product.amount > 0 and settings.paycore_enabled():
+            try:
+                invoice = await create_payment_invoice(
+                    settings,
+                    amount=product.amount,
+                    currency=product.currency or settings.paycore_currency,
+                    description=f"{shop_name}: {product.title}",
+                    reference_id=order_id,
+                )
+                paycore_url = (
+                    invoice.get("hpp_url")
+                    or invoice.get("payment_url")
+                    or invoice.get("checkout_url")
+                )
+                if isinstance(paycore_url, str) and paycore_url:
+                    pass
+                else:
+                    paycore_url = None
+            except (PayCoreNotConfiguredError, PayCoreRequestError) as exc:
+                logger.warning("PayCore: %s", exc)
+
         save_order(
             order_id=order_id,
             user_id=q.from_user.id,
@@ -337,6 +423,7 @@ def register_handlers(dp: Dispatcher, settings) -> None:
             currency=product.currency,
             pubg_id=pubg_id,
             comment=comment or None,
+            paycore_url=paycore_url,
         )
         await state.clear()
 
@@ -346,28 +433,39 @@ def register_handlers(dp: Dispatcher, settings) -> None:
             else f"{product.amount:g} {product.currency}"
         )
         user_text = (
-            f"✅ Заявка <b>{order_id}</b> принята!\n\n"
+            f"✅ Заявка <b>{order_id}</b> создана!\n\n"
             f"<b>Товар:</b> {product.title}\n"
             f"<b>Сумма:</b> {price}\n"
             f"<b>Player ID:</b> <code>{pubg_id}</code>\n"
             f"<b>Комментарий:</b> {comment or '—'}\n\n"
-            f"Оператор свяжется с вами для оплаты и выдачи.\n"
-            f"Поддержка: {support}"
         )
-        await q.message.edit_text(user_text, parse_mode="HTML")
-        await q.message.answer("Меню:", reply_markup=reply_main_menu())
+        if paycore_url:
+            user_text += "Оплатите заказ кнопкой ниже — после оплаты оператор выдаст услугу."
+            await q.message.edit_text(user_text, parse_mode="HTML")
+            await q.message.answer(
+                "💳 Оплата PayCore",
+                reply_markup=inline_paycore(paycore_url),
+            )
+        else:
+            user_text += (
+                f"Оператор свяжется с вами для оплаты.\n"
+                f"Поддержка: {support}"
+            )
+            await q.message.edit_text(user_text, parse_mode="HTML")
+            await send_welcome(q.bot, q.message.chat.id, settings)
         await q.answer("Заявка создана")
 
         admin_text = (
-            f"🆕 <b>Новая заявка {order_id}</b>\n\n"
-            f"От: {q.from_user.full_name}"
+            f"🆕 <b>{order_id}</b>\n"
+            f"{q.from_user.full_name}"
             f"{f' (@{username})' if username else ''}\n"
-            f"TG ID: <code>{q.from_user.id}</code>\n\n"
-            f"<b>Товар:</b> {product.title}\n"
-            f"<b>Сумма:</b> {price}\n"
-            f"<b>Player ID:</b> <code>{pubg_id}</code>\n"
-            f"<b>Комментарий:</b> {comment or '—'}"
+            f"TG: <code>{q.from_user.id}</code>\n\n"
+            f"<b>{product.title}</b> — {price}\n"
+            f"Player ID: <code>{pubg_id}</code>\n"
+            f"{comment or '—'}"
         )
+        if paycore_url:
+            admin_text += f"\n\nPayCore: {paycore_url}"
         for admin_id in admin_ids:
             try:
                 await q.bot.send_message(admin_id, admin_text, parse_mode="HTML")
@@ -389,17 +487,16 @@ async def run_bot() -> None:
 
     try:
         me = await bot.get_me()
-        logger.info("Бот запущен: @%s", me.username)
+        logger.info("Бот запущен: @%s — %s", me.username, settings.shop_name)
         wh = await bot.get_webhook_info()
         if wh.url:
-            logger.warning("Сбрасываю webhook: %s", wh.url)
             await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot)
     except TelegramNetworkError:
         logger.exception("Нет сети до api.telegram.org")
         raise SystemExit(1) from None
     except TelegramAPIError:
-        logger.exception("Ошибка Telegram API (проверьте токен)")
+        logger.exception("Ошибка Telegram API")
         raise SystemExit(1) from None
 
 
