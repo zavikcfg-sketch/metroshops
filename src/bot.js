@@ -84,13 +84,13 @@ async function sendWelcome(bot, chatId, settings) {
   const banner = settings.bannerFile();
 
   if (fs.existsSync(banner)) {
-    await bot.sendPhoto(chatId, new InputFile(banner), {
+    await bot.api.sendPhoto(chatId, new InputFile(banner), {
       caption,
       reply_markup: markup,
       parse_mode: "HTML",
     });
   } else {
-    await bot.sendMessage(chatId, caption, {
+    await bot.api.sendMessage(chatId, caption, {
       reply_markup: markup,
       parse_mode: "HTML",
     });
