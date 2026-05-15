@@ -73,6 +73,7 @@ from shared.catalog import (  # noqa: E402
 )
 from shared.config import Settings, get_settings  # noqa: E402
 from shared.database import init_db, list_recent_orders, save_order  # noqa: E402
+from shared.custom_emoji import build_escort_pick_message  # noqa: E402
 from shared.paycore import (  # noqa: E402
     PayCoreNotConfiguredError,
     PayCoreRequestError,
@@ -344,20 +345,30 @@ def register_handlers(dp: Dispatcher, settings: Settings) -> None:
         await state.set_state(OrderFlow.waiting_pubg_id)
         await state.update_data(product_id=pid)
 
-        price_line = (
-            "Цена: <b>по согласованию</b>"
-            if product.amount <= 0
-            else f"Цена: <b>{int(product.amount)} ₽</b>"
-        )
-        hint = f"\n\n{product.extra_hint}" if product.extra_hint else ""
-        await q.message.answer(
-            f"Вы выбрали: <b>{product.title}</b>\n\n"
-            f"{product.description}\n\n"
-            f"{price_line}{hint}\n\n"
-            f"Введите <b>Player ID</b> PUBG Mobile.\n"
-            f"Отмена: /cancel",
-            parse_mode="HTML",
-        )
+        if product.category == "escort":
+            price = None if product.amount <= 0 else int(product.amount)
+            text, entities = build_escort_pick_message(
+                title=product.title,
+                product_id=product.id,
+                price_rub=price,
+                extra_hint=product.extra_hint,
+            )
+            await q.message.answer(text, entities=entities, parse_mode=None)
+        else:
+            price_line = (
+                "Цена: <b>по согласованию</b>"
+                if product.amount <= 0
+                else f"Цена: <b>{int(product.amount)} ₽</b>"
+            )
+            hint = f"\n\n{product.extra_hint}" if product.extra_hint else ""
+            await q.message.answer(
+                f"Вы выбрали: <b>{product.title}</b>\n\n"
+                f"{product.description}\n\n"
+                f"{price_line}{hint}\n\n"
+                f"Введите <b>Player ID</b> PUBG Mobile.\n"
+                f"Отмена: /cancel",
+                parse_mode="HTML",
+            )
 
     @dp.message(OrderFlow.waiting_pubg_id, F.text)
     async def process_pubg_id(message: Message, state: FSMContext) -> None:
@@ -519,6 +530,13 @@ async def run_bot() -> None:
     try:
         me = await bot.get_me()
         logger.info("Бот запущен: @%s — %s", me.username, settings.shop_name)
+        logger.info(
+            "Premium emoji IDs: helmet=%s armor=%s bag=%s mk=%s",
+            "5204201311238629537",
+            "5201907777227730330",
+            "5201773765658160740",
+            "5204105005186952289",
+        )
         wh = await bot.get_webhook_info()
         if wh.url:
             await bot.delete_webhook(drop_pending_updates=False)

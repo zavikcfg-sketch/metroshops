@@ -14,7 +14,8 @@ def _tg_emoji(emoji_id: str, fallback: str) -> str:
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
-ESCORT_GEAR_LINE = (
+# HTML-вариант (если клиент поддерживает tg-emoji в caption)
+ESCORT_GEAR_LINE_HTML = (
     "• Выдача "
     + _tg_emoji(EMOJI_HELMET, "🪖")
     + _tg_emoji(EMOJI_ARMOR, "🧥")
@@ -22,6 +23,9 @@ ESCORT_GEAR_LINE = (
     + _tg_emoji(EMOJI_MK, "🔫")
     + "\n"
 )
+
+# Для Product.description (без HTML-тегов; эмодзи подставляются при отправке)
+ESCORT_GEAR_LINE = "• Выдача 🪖🧥👜🔫\n"
 
 ESCORT_INFO_FULL = (
     "<b>🔑 Опыт, которому можно доверять</b>\n"
