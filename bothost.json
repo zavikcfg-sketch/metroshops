@@ -1,5 +1,5 @@
 {
-  "language": "python",
-  "start_command": "sh start.sh",
-  "main": "bot.py"
+  "language": "nodejs",
+  "start_command": "node app.js",
+  "main": "app.js"
 }

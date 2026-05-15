@@ -1,9 +1,7 @@
-"""
-Точка входа для Bothost (ожидает bot.py).
-Реальный запуск: sh start.sh или python main.py
-"""
+"""Совместимость Bothost: перенаправление на Node.js."""
+import os
+import subprocess
+import sys
 
-from main import main_cli
-
-if __name__ == "__main__":
-    main_cli()
+root = os.path.dirname(os.path.abspath(__file__))
+sys.exit(subprocess.call(["node", "app.js"], cwd=root))

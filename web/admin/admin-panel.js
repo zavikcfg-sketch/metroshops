@@ -1,8 +1,4 @@
-/* Скрипт только для браузера. Запуск на Bothost: sh start.sh (Python), не node. */
-if (typeof document === "undefined") {
-  console.error("admin-panel.js — только для браузера. Укажите команду запуска: sh start.sh");
-} else {
-  document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", () => {
     const TOKEN_KEY = "metro_admin_token";
 
     const $ = (s, r = document) => r.querySelector(s);
@@ -294,4 +290,3 @@ if (typeof document === "undefined") {
       initApp();
     }
   });
-}
