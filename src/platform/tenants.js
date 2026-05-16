@@ -10,6 +10,7 @@ import {
   seedMenuForBot,
   seedProductsForBot,
 } from "./seed.js";
+import { migrateCompositePrimaryKeys } from "./migratePk.js";
 
 export function initPlatformSchema() {
   const conn = connect();
@@ -60,11 +61,7 @@ function migrateTenantColumns(conn) {
       conn.exec(`ALTER TABLE ${table} ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'main'`);
     }
   }
-  try {
-    conn.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_products_bot ON products(bot_id, id)`);
-  } catch {
-    /* ignore */
-  }
+  migrateCompositePrimaryKeys(conn);
 }
 
 function ensureLegacyTenant(conn) {
@@ -170,42 +167,74 @@ export function listActiveTenants() {
     .map(rowToTenant);
 }
 
+export function findTenantSlugByToken(token, excludeId = null) {
+  const t = String(token ?? "").trim();
+  if (!t) return null;
+  const row = excludeId
+    ? connect()
+        .prepare("SELECT slug FROM tenant_bots WHERE telegram_token = ? AND id != ? LIMIT 1")
+        .get(t, excludeId)
+    : connect()
+        .prepare("SELECT slug FROM tenant_bots WHERE telegram_token = ? LIMIT 1")
+        .get(t);
+  return row?.slug ?? null;
+}
+
+export function listOtherTenantsWithToken(token, tenantId) {
+  return connect()
+    .prepare("SELECT id, slug FROM tenant_bots WHERE telegram_token = ? AND id != ?")
+    .all(String(token ?? "").trim(), tenantId)
+    .map((r) => ({ id: r.id, slug: r.slug }));
+}
+
 export function createTenant({ token, displayName, adminPassword, avatarPath = null }) {
   const password = String(adminPassword ?? "").trim();
   if (password.length < 4) {
     throw new Error("Укажите пароль админки (минимум 4 символа)");
   }
 
+  const trimmedToken = String(token ?? "").trim();
+  const dupSlug = findTenantSlugByToken(trimmedToken);
+  if (dupSlug) {
+    throw new Error(
+      `Этот токен Telegram уже используется ботом «${dupSlug}». Создайте нового бота в @BotFather и вставьте его токен.`,
+    );
+  }
+
   const conn = connect();
   const id = crypto.randomUUID();
   const slug = makeSlug(displayName);
   const defs = defaultTenantSettings(displayName);
+  const createdAt = new Date().toISOString();
 
-  conn
-    .prepare(
-      `INSERT INTO tenant_bots (
-        id, slug, display_name, telegram_token, admin_password, avatar_path,
-        shop_name, reviews_url, metro_shop_url, website_url, support_contact, active, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-    )
-    .run(
-      id,
-      slug,
-      displayName,
-      token.trim(),
-      password,
-      avatarPath,
-      defs.shop_name,
-      defs.reviews_url,
-      defs.metro_shop_url,
-      defs.website_url,
-      defs.support_contact,
-      new Date().toISOString(),
-    );
+  const insert = conn.transaction(() => {
+    conn
+      .prepare(
+        `INSERT INTO tenant_bots (
+          id, slug, display_name, telegram_token, admin_password, avatar_path,
+          shop_name, reviews_url, metro_shop_url, website_url, support_contact, active, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      )
+      .run(
+        id,
+        slug,
+        displayName,
+        trimmedToken,
+        password,
+        avatarPath,
+        defs.shop_name,
+        defs.reviews_url,
+        defs.metro_shop_url,
+        defs.website_url,
+        defs.support_contact,
+        createdAt,
+      );
+    seedProductsForBot(conn, id);
+    seedCategoriesForBot(conn, id);
+    seedMenuForBot(conn, id);
+  });
 
-  seedProductsForBot(conn, id);
-  seedCategoriesForBot(conn, id);
-  seedMenuForBot(conn, id);
+  insert();
 
   const tenant = getTenantById(id);
   return { tenant, adminPassword: password, adminUrl: `/b/${slug}/` };

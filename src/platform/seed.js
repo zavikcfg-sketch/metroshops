@@ -20,7 +20,7 @@ export function seedProductsForBot(conn, botId) {
 
   const all = [...ESCORT_PRODUCTS, ...BOOST_PRODUCTS, ...GEAR_PRODUCTS];
   const ins = conn.prepare(`
-    INSERT INTO products (
+    INSERT OR IGNORE INTO products (
       bot_id, id, title, description, amount, currency, category,
       popular, extra_hint, button_style, active, sort_order
     ) VALUES (

@@ -19,6 +19,14 @@ export async function mainBot() {
 export async function main() {
   logPortDiagnostics();
   initDb();
+  process.on("unhandledRejection", (err) => {
+    const msg = err?.error?.message ?? err?.message ?? String(err);
+    if (msg.includes("409") || msg.includes("getUpdates")) {
+      console.error("[metro-shop] Telegram polling conflict (не падаем):", msg);
+      return;
+    }
+    console.error("[metro-shop] unhandledRejection:", err);
+  });
   await startAdminServer();
   await startBot();
 }

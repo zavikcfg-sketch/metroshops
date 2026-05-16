@@ -431,13 +431,14 @@ export async function runTenantBot(tenant) {
   const wh = await bot.api.getWebhookInfo();
   if (wh.url) await bot.api.deleteWebhook({ drop_pending_updates: false });
 
-  bot.start({
-    onStart: () => console.log(`[metro-shop] Polling @${me.username}`),
+  const startPromise = bot.start({
+    onStart: () => console.log(`[metro-shop] Polling @${me.username} (${tenant.slug})`),
   });
 
   return {
     bot,
     stop: () => bot.stop(),
     username: me.username,
+    startPromise,
   };
 }

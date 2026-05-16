@@ -285,29 +285,17 @@ export function saveOrder(botId, {
 
 export function registerUser(botId, userId, username = null, firstName = null) {
   const now = new Date().toISOString();
-  const conn = connect();
-  const row = conn
-    .prepare("SELECT user_id FROM bot_users WHERE bot_id = ? AND user_id = ?")
-    .get(botId, userId);
-  if (row) {
-    conn
-      .prepare(
-        `UPDATE bot_users SET
-          username = COALESCE(?, username),
-          first_name = COALESCE(?, first_name),
-          last_seen = ?
-        WHERE bot_id = ? AND user_id = ?`,
-      )
-      .run(username, firstName, now, botId, userId);
-  } else {
-    conn
-      .prepare(
-        `INSERT INTO bot_users (
-          bot_id, user_id, username, first_name, orders_count, total_spent, first_seen, last_seen
-        ) VALUES (?, ?, ?, ?, 0, 0, ?, ?)`,
-      )
-      .run(botId, userId, username, firstName, now, now);
-  }
+  connect()
+    .prepare(
+      `INSERT INTO bot_users (
+        bot_id, user_id, username, first_name, orders_count, total_spent, first_seen, last_seen
+      ) VALUES (?, ?, ?, ?, 0, 0, ?, ?)
+      ON CONFLICT(bot_id, user_id) DO UPDATE SET
+        username = COALESCE(excluded.username, bot_users.username),
+        first_name = COALESCE(excluded.first_name, bot_users.first_name),
+        last_seen = excluded.last_seen`,
+    )
+    .run(botId, userId, username, firstName, now, now);
 }
 
 function recordOrderUser(botId, userId, username, spent) {

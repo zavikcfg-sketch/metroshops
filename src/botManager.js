@@ -3,6 +3,7 @@ import fs from "fs";
 import {
   getTenantById,
   listActiveTenants,
+  listOtherTenantsWithToken,
   setTenantActive,
   updateTenant,
 } from "./platform/tenants.js";
@@ -12,6 +13,36 @@ const runners = new Map();
 
 export function isBotRunning(tenantId) {
   return runners.has(tenantId);
+}
+
+/** Один токен Telegram = один polling. При дублях в БД оставляем main или самый старый. */
+function pickOneTenantPerToken(tenants) {
+  const byToken = new Map();
+  const skipped = [];
+
+  for (const t of tenants) {
+    const key = t.telegram_token.trim();
+    const prev = byToken.get(key);
+    if (!prev) {
+      byToken.set(key, t);
+      continue;
+    }
+    if (t.id === "main") {
+      skipped.push(prev.slug);
+      byToken.set(key, t);
+    } else if (prev.id === "main") {
+      skipped.push(t.slug);
+    } else {
+      skipped.push(t.slug);
+    }
+  }
+
+  if (skipped.length) {
+    console.warn(
+      `[metro-shop] Один токен — один бот в Telegram. Не запускаем: ${[...new Set(skipped)].join(", ")}. Удалите дубли в /platform или выдайте им разные токены.`,
+    );
+  }
+  return [...byToken.values()];
 }
 
 export async function applyBotProfile(tenant, avatarPath) {
@@ -42,6 +73,16 @@ export async function getBotTelegramInfo(tenant) {
 export async function startTenantBot(tenant) {
   if (!tenant) return { ok: false, error: "Бот не найден" };
 
+  const token = tenant.telegram_token.trim();
+  for (const other of listOtherTenantsWithToken(token, tenant.id)) {
+    if (runners.has(other.id)) {
+      await stopTenantBot(other.id);
+      console.warn(
+        `[metro-shop] Остановлен «${other.slug}» — тот же токен, что у «${tenant.slug}»`,
+      );
+    }
+  }
+
   await stopTenantBot(tenant.id);
   setTenantActive(tenant.id, true);
   const fresh = getTenantById(tenant.id);
@@ -49,6 +90,11 @@ export async function startTenantBot(tenant) {
 
   try {
     const runner = await runTenantBot(fresh);
+    runner.startPromise?.catch((err) => {
+      const msg = err?.error?.message ?? err?.message ?? String(err);
+      console.error(`[metro-shop] Polling упал @${fresh.slug}:`, msg);
+      runners.delete(fresh.id);
+    });
     runners.set(fresh.id, runner);
     console.log(`[metro-shop] Started TG bot @${runner.username} (${fresh.slug})`);
     return { ok: true, running: true, username: runner.username };
@@ -83,6 +129,7 @@ export async function getBotStatus(tenantId) {
   const tenant = getTenantById(tenantId);
   if (!tenant) return { ok: false, error: "Бот не найден" };
   const info = await getBotTelegramInfo(tenant);
+  const dupes = listOtherTenantsWithToken(tenant.telegram_token, tenant.id);
   return {
     ok: true,
     running: isBotRunning(tenantId),
@@ -91,11 +138,12 @@ export async function getBotStatus(tenantId) {
     display_name: tenant.display_name,
     username: info.username,
     telegram_ok: info.ok,
+    token_shared_with: dupes.map((d) => d.slug),
   };
 }
 
 export async function startAllBots() {
-  const tenants = listActiveTenants();
+  const tenants = pickOneTenantPerToken(listActiveTenants());
   if (!tenants.length) {
     console.warn("[metro-shop] Нет активных ботов в tenant_bots");
     return;
