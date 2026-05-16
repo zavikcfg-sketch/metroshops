@@ -2,12 +2,8 @@ import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 import { getSettings } from "./config.js";
-import {
-  BOOST_PRODUCTS,
-  CATEGORIES,
-  ESCORT_PRODUCTS,
-  GEAR_PRODUCTS,
-} from "./catalog.js";
+import { CATEGORIES } from "./catalog.js";
+import { initPlatformSchema } from "./platform/tenants.js";
 
 let db;
 
@@ -17,7 +13,7 @@ function dbPath() {
   return path.join(dir, "shop.db");
 }
 
-function connect() {
+export function connect() {
   if (!db) {
     db = new Database(dbPath());
     db.pragma("journal_mode = WAL");
@@ -52,7 +48,8 @@ export function initDb() {
   const conn = connect();
   conn.exec(`
     CREATE TABLE IF NOT EXISTS products (
-      id TEXT PRIMARY KEY,
+      bot_id TEXT NOT NULL DEFAULT 'main',
+      id TEXT NOT NULL,
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       amount REAL NOT NULL DEFAULT 0,
@@ -62,24 +59,30 @@ export function initDb() {
       extra_hint TEXT NOT NULL DEFAULT '',
       button_style TEXT NOT NULL DEFAULT 'primary',
       active INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 0
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (bot_id, id)
     );
     CREATE TABLE IF NOT EXISTS category_settings (
-      category TEXT PRIMARY KEY,
+      bot_id TEXT NOT NULL DEFAULT 'main',
+      category TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       title TEXT NOT NULL DEFAULT '',
-      description TEXT NOT NULL DEFAULT ''
+      description TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (bot_id, category)
     );
     CREATE TABLE IF NOT EXISTS promocodes (
-      code TEXT PRIMARY KEY,
+      bot_id TEXT NOT NULL DEFAULT 'main',
+      code TEXT NOT NULL,
       discount_percent REAL NOT NULL,
       use_limit INTEGER NOT NULL DEFAULT 0,
       uses_left INTEGER NOT NULL DEFAULT 0,
       one_per_user INTEGER NOT NULL DEFAULT 1,
       active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (bot_id, code)
     );
     CREATE TABLE IF NOT EXISTS orders (
+      bot_id TEXT NOT NULL DEFAULT 'main',
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL,
       username TEXT,
@@ -94,60 +97,23 @@ export function initDb() {
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS bot_users (
-      user_id INTEGER PRIMARY KEY,
+      bot_id TEXT NOT NULL DEFAULT 'main',
+      user_id INTEGER NOT NULL,
       username TEXT,
       first_name TEXT,
       orders_count INTEGER NOT NULL DEFAULT 0,
       total_spent REAL NOT NULL DEFAULT 0,
       first_seen TEXT NOT NULL,
-      last_seen TEXT NOT NULL
+      last_seen TEXT NOT NULL,
+      PRIMARY KEY (bot_id, user_id)
     );
   `);
-  seedIfEmpty();
+  initPlatformSchema();
 }
 
-function seedIfEmpty() {
-  const conn = connect();
-  const n = conn.prepare("SELECT COUNT(*) AS c FROM products").get().c;
-  if (n > 0) return;
-
-  const all = [...ESCORT_PRODUCTS, ...BOOST_PRODUCTS, ...GEAR_PRODUCTS];
-  const ins = conn.prepare(`
-    INSERT INTO products (
-      id, title, description, amount, currency, category,
-      popular, extra_hint, button_style, active, sort_order
-    ) VALUES (
-      @id, @title, @description, @amount, @currency, @category,
-      @popular, @extra_hint, @button_style, 1, @sort_order
-    )
-  `);
-  all.forEach((p, i) => {
-    ins.run({
-      id: p.id,
-      title: p.title,
-      description: p.description,
-      amount: p.amount,
-      currency: p.currency || "RUB",
-      category: p.category,
-      popular: p.popular ? 1 : 0,
-      extra_hint: p.extra_hint || "",
-      button_style: p.button_style || "primary",
-      sort_order: i,
-    });
-  });
-
-  const catIns = conn.prepare(`
-    INSERT OR IGNORE INTO category_settings (category, enabled, title, description)
-    VALUES (@category, 1, @title, @description)
-  `);
-  for (const [catId, [title, desc]] of Object.entries(CATEGORIES)) {
-    catIns.run({ category: catId, title, description: desc });
-  }
-}
-
-export function listProducts({ activeOnly = false, category = null } = {}) {
-  let q = "SELECT * FROM products WHERE 1=1";
-  const params = [];
+export function listProducts(botId, { activeOnly = false, category = null } = {}) {
+  let q = "SELECT * FROM products WHERE bot_id = ?";
+  const params = [botId];
   if (activeOnly) q += " AND active = 1";
   if (category) {
     q += " AND category = ?";
@@ -160,14 +126,18 @@ export function listProducts({ activeOnly = false, category = null } = {}) {
     .map(rowProduct);
 }
 
-export function getProduct(productId) {
-  const row = connect().prepare("SELECT * FROM products WHERE id = ?").get(productId);
+export function getProduct(botId, productId) {
+  const row = connect()
+    .prepare("SELECT * FROM products WHERE bot_id = ? AND id = ?")
+    .get(botId, productId);
   return row ? rowProduct(row) : null;
 }
 
-export function getCategoriesForBot() {
+export function getCategoriesForBot(botId) {
   const settings = {};
-  for (const row of connect().prepare("SELECT * FROM category_settings").all()) {
+  for (const row of connect()
+    .prepare("SELECT * FROM category_settings WHERE bot_id = ?")
+    .all(botId)) {
     settings[row.category] = row;
   }
   const result = {};
@@ -176,39 +146,40 @@ export function getCategoriesForBot() {
     if (st && !st.enabled) continue;
     const title = (st?.title || defaultTitle).trim() || defaultTitle;
     const desc = (st?.description || defaultDesc).trim() || defaultDesc;
-    const products = listProducts({ activeOnly: true, category: catId });
+    const products = listProducts(botId, { activeOnly: true, category: catId });
     if (products.length) result[catId] = [title, desc, products];
   }
   return result;
 }
 
-export function listPopularProducts() {
+export function listPopularProducts(botId) {
   return connect()
     .prepare(
-      `SELECT * FROM products WHERE active = 1 AND popular = 1 ORDER BY sort_order, title`,
+      `SELECT * FROM products WHERE bot_id = ? AND active = 1 AND popular = 1 ORDER BY sort_order, title`,
     )
-    .all()
+    .all(botId)
     .map(rowProduct);
 }
 
-export function createProduct(data) {
+export function createProduct(botId, data) {
   let pid = data.id || slug(data.title);
   const conn = connect();
-  if (conn.prepare("SELECT 1 FROM products WHERE id = ?").get(pid)) {
+  if (conn.prepare("SELECT 1 FROM products WHERE bot_id = ? AND id = ?").get(botId, pid)) {
     const base = pid;
     let n = 2;
-    while (conn.prepare("SELECT 1 FROM products WHERE id = ?").get(pid)) {
+    while (conn.prepare("SELECT 1 FROM products WHERE bot_id = ? AND id = ?").get(botId, pid)) {
       pid = `${base}_${n++}`;
     }
   }
   conn
     .prepare(
       `INSERT INTO products (
-        id, title, description, amount, currency, category,
+        bot_id, id, title, description, amount, currency, category,
         popular, extra_hint, button_style, active, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
+      botId,
       pid,
       data.title,
       data.description || "",
@@ -221,10 +192,10 @@ export function createProduct(data) {
       data.active === false ? 0 : 1,
       Number(data.sort_order ?? 0),
     );
-  return getProduct(pid);
+  return getProduct(botId, pid);
 }
 
-export function updateProduct(productId, data) {
+export function updateProduct(botId, productId, data) {
   const mapping = {
     title: "title",
     description: "description",
@@ -247,33 +218,35 @@ export function updateProduct(productId, data) {
       values.push(val);
     }
   }
-  if (!fields.length) return getProduct(productId);
-  values.push(productId);
+  if (!fields.length) return getProduct(botId, productId);
+  values.push(botId, productId);
   connect()
-    .prepare(`UPDATE products SET ${fields.join(", ")} WHERE id = ?`)
+    .prepare(`UPDATE products SET ${fields.join(", ")} WHERE bot_id = ? AND id = ?`)
     .run(...values);
-  return getProduct(productId);
+  return getProduct(botId, productId);
 }
 
-export function deleteProduct(productId) {
-  const r = connect().prepare("DELETE FROM products WHERE id = ?").run(productId);
+export function deleteProduct(botId, productId) {
+  const r = connect()
+    .prepare("DELETE FROM products WHERE bot_id = ? AND id = ?")
+    .run(botId, productId);
   return r.changes > 0;
 }
 
-export function listCategorySettings() {
+export function listCategorySettings(botId) {
   return connect()
-    .prepare("SELECT * FROM category_settings ORDER BY category")
-    .all()
+    .prepare("SELECT * FROM category_settings WHERE bot_id = ? ORDER BY category")
+    .all(botId)
     .map((r) => ({ ...r, enabled: !!r.enabled }));
 }
 
-export function setCategoryEnabled(category, enabled) {
+export function setCategoryEnabled(botId, category, enabled) {
   connect()
-    .prepare("UPDATE category_settings SET enabled = ? WHERE category = ?")
-    .run(enabled ? 1 : 0, category);
+    .prepare("UPDATE category_settings SET enabled = ? WHERE bot_id = ? AND category = ?")
+    .run(enabled ? 1 : 0, botId, category);
 }
 
-export function saveOrder({
+export function saveOrder(botId, {
   orderId,
   userId,
   username,
@@ -289,11 +262,12 @@ export function saveOrder({
   connect()
     .prepare(
       `INSERT INTO orders (
-        id, user_id, username, product_id, product_title,
+        bot_id, id, user_id, username, product_id, product_title,
         amount, currency, pubg_id, comment, paycore_url, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
     )
     .run(
+      botId,
       orderId,
       userId,
       username,
@@ -306,13 +280,15 @@ export function saveOrder({
       paycoreUrl,
       now,
     );
-  recordOrderUser(userId, username, amount);
+  recordOrderUser(botId, userId, username, amount);
 }
 
-export function registerUser(userId, username = null, firstName = null) {
+export function registerUser(botId, userId, username = null, firstName = null) {
   const now = new Date().toISOString();
   const conn = connect();
-  const row = conn.prepare("SELECT user_id FROM bot_users WHERE user_id = ?").get(userId);
+  const row = conn
+    .prepare("SELECT user_id FROM bot_users WHERE bot_id = ? AND user_id = ?")
+    .get(botId, userId);
   if (row) {
     conn
       .prepare(
@@ -320,24 +296,26 @@ export function registerUser(userId, username = null, firstName = null) {
           username = COALESCE(?, username),
           first_name = COALESCE(?, first_name),
           last_seen = ?
-        WHERE user_id = ?`,
+        WHERE bot_id = ? AND user_id = ?`,
       )
-      .run(username, firstName, now, userId);
+      .run(username, firstName, now, botId, userId);
   } else {
     conn
       .prepare(
         `INSERT INTO bot_users (
-          user_id, username, first_name, orders_count, total_spent, first_seen, last_seen
-        ) VALUES (?, ?, ?, 0, 0, ?, ?)`,
+          bot_id, user_id, username, first_name, orders_count, total_spent, first_seen, last_seen
+        ) VALUES (?, ?, ?, ?, 0, 0, ?, ?)`,
       )
-      .run(userId, username, firstName, now, now);
+      .run(botId, userId, username, firstName, now, now);
   }
 }
 
-function recordOrderUser(userId, username, spent) {
+function recordOrderUser(botId, userId, username, spent) {
   const now = new Date().toISOString();
   const conn = connect();
-  const row = conn.prepare("SELECT user_id FROM bot_users WHERE user_id = ?").get(userId);
+  const row = conn
+    .prepare("SELECT user_id FROM bot_users WHERE bot_id = ? AND user_id = ?")
+    .get(botId, userId);
   if (row) {
     conn
       .prepare(
@@ -346,38 +324,42 @@ function recordOrderUser(userId, username, spent) {
           orders_count = orders_count + 1,
           total_spent = total_spent + ?,
           last_seen = ?
-        WHERE user_id = ?`,
+        WHERE bot_id = ? AND user_id = ?`,
       )
-      .run(username, spent, now, userId);
+      .run(username, spent, now, botId, userId);
   } else {
     conn
       .prepare(
         `INSERT INTO bot_users (
-          user_id, username, first_name, orders_count, total_spent, first_seen, last_seen
-        ) VALUES (?, ?, NULL, 1, ?, ?, ?)`,
+          bot_id, user_id, username, first_name, orders_count, total_spent, first_seen, last_seen
+        ) VALUES (?, ?, ?, NULL, 1, ?, ?, ?)`,
       )
-      .run(userId, username, spent, now, now);
+      .run(botId, userId, username, spent, now, now);
   }
 }
 
-export function listRecentOrders(limit = 50) {
+export function listRecentOrders(botId, limit = 50) {
   return connect()
-    .prepare("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?")
-    .all(limit);
+    .prepare("SELECT * FROM orders WHERE bot_id = ? ORDER BY created_at DESC LIMIT ?")
+    .all(botId, limit);
 }
 
-export function statsSummary() {
+export function statsSummary(botId) {
   const conn = connect();
   const orders = conn
-    .prepare("SELECT COUNT(*) AS c, COALESCE(SUM(amount), 0) AS s FROM orders")
-    .get();
-  const users = conn.prepare("SELECT COUNT(*) AS c FROM bot_users").get().c;
+    .prepare(
+      "SELECT COUNT(*) AS c, COALESCE(SUM(amount), 0) AS s FROM orders WHERE bot_id = ?",
+    )
+    .get(botId);
+  const users = conn
+    .prepare("SELECT COUNT(*) AS c FROM bot_users WHERE bot_id = ?")
+    .get(botId).c;
   const buyers = conn
-    .prepare("SELECT COUNT(DISTINCT user_id) AS c FROM orders")
-    .get().c;
+    .prepare("SELECT COUNT(DISTINCT user_id) AS c FROM orders WHERE bot_id = ?")
+    .get(botId).c;
   const products = conn
-    .prepare("SELECT COUNT(*) AS c FROM products WHERE active = 1")
-    .get().c;
+    .prepare("SELECT COUNT(*) AS c FROM products WHERE bot_id = ? AND active = 1")
+    .get(botId).c;
   return {
     orders_count: orders.c,
     sales_total: Math.round(orders.s * 100) / 100,
@@ -387,31 +369,31 @@ export function statsSummary() {
   };
 }
 
-export function listPromos() {
+export function listPromos(botId) {
   return connect()
-    .prepare("SELECT * FROM promocodes ORDER BY created_at DESC")
-    .all();
+    .prepare("SELECT * FROM promocodes WHERE bot_id = ? ORDER BY created_at DESC")
+    .all(botId);
 }
 
-export function createPromo(code, discountPercent, useLimit) {
+export function createPromo(botId, code, discountPercent, useLimit) {
   const now = new Date().toISOString();
   connect()
     .prepare(
-      `INSERT INTO promocodes (code, discount_percent, use_limit, uses_left, active, created_at)
-       VALUES (?, ?, ?, ?, 1, ?)`,
+      `INSERT INTO promocodes (bot_id, code, discount_percent, use_limit, uses_left, active, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?)`,
     )
-    .run(code.toUpperCase(), discountPercent, useLimit, useLimit, now);
+    .run(botId, code.toUpperCase(), discountPercent, useLimit, useLimit, now);
 }
 
-export function deletePromo(code) {
+export function deletePromo(botId, code) {
   const r = connect()
-    .prepare("DELETE FROM promocodes WHERE code = ?")
-    .run(code.toUpperCase());
+    .prepare("DELETE FROM promocodes WHERE bot_id = ? AND code = ?")
+    .run(botId, code.toUpperCase());
   return r.changes > 0;
 }
 
-export function listUsers(limit = 100) {
+export function listUsers(botId, limit = 100) {
   return connect()
-    .prepare("SELECT * FROM bot_users ORDER BY last_seen DESC LIMIT ?")
-    .all(limit);
+    .prepare("SELECT * FROM bot_users WHERE bot_id = ? ORDER BY last_seen DESC LIMIT ?")
+    .all(botId, limit);
 }

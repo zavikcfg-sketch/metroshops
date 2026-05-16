@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Metro Shop Platform</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .platform-wrap { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    .bot-list { display: grid; gap: 1rem; margin-top: 1.5rem; }
+    .bot-item { background: #1a1d24; border-radius: 12px; padding: 1rem 1.25rem; }
+    .create-form { display: grid; gap: 0.75rem; margin-top: 1rem; }
+    .create-form input { width: 100%; padding: 0.6rem; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff; }
+    #create-result { margin-top: 1rem; padding: 1rem; background: #0d2818; border-radius: 8px; display: none; }
+    #create-result.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="logo">Metro<span>Platform</span></div>
+      <h1>Сервис автоматизации</h1>
+      <p>Главная панель — создание ботов для клиентов</p>
+      <input id="login-password" type="password" placeholder="SUPER_ADMIN_PASSWORD" />
+      <button id="login-btn" class="btn btn-primary">Войти</button>
+      <p id="login-error" class="error hidden"></p>
+    </div>
+  </div>
+
+  <div id="app" class="platform-wrap hidden">
+    <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <div class="logo">Metro<span>Platform</span></div>
+      <button id="logout-btn" class="btn btn-ghost">Выйти</button>
+    </header>
+
+    <section class="card">
+      <h2>Создать нового бота</h2>
+      <p class="muted">Токен @BotFather, название, аватар. Бот-клон Metro Shop + отдельная админка.</p>
+      <form id="create-bot-form" class="create-form">
+        <input name="token" required placeholder="Токен бота" />
+        <input name="display_name" required placeholder="Название магазина" />
+        <input name="admin_password" placeholder="Пароль админки (пусто = авто)" />
+        <input type="file" name="avatar" accept="image/*" />
+        <button type="submit" class="btn btn-primary">Создать бота</button>
+      </form>
+      <div id="create-result"></div>
+    </section>
+
+    <section style="margin-top:2rem;">
+      <h2>Боты</h2>
+      <div id="bots-list" class="bot-list"></div>
+    </section>
+  </div>
+
+  <script src="/platform/platform.js"></script>
+</body>
+</html>

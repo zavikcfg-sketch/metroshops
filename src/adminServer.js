@@ -1,173 +1,54 @@
-import crypto from "crypto";
 import http from "http";
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import { getSettings, ROOT } from "./config.js";
 import { logPortDiagnostics, resolveListenPorts } from "./port.js";
+import { initDb } from "./repository.js";
+import { mountPlatformApi } from "./routes/platformApi.js";
 import {
-  createProduct,
-  createPromo,
-  deleteProduct,
-  deletePromo,
-  initDb,
-  listCategorySettings,
-  listProducts,
-  listPromos,
-  listRecentOrders,
-  listUsers,
-  setCategoryEnabled,
-  statsSummary,
-  updateProduct,
-} from "./repository.js";
+  makeTenantAuth,
+  mountTenantApi,
+  tenantMiddleware,
+} from "./routes/tenantApi.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.join(ROOT, "web", "admin");
-
-function safeEqual(a, b) {
-  const ba = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  if (ba.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ba, bb);
-}
-
-function checkAuth(req, res, next) {
-  const settings = getSettings();
-  const secret = settings.adminPassword.trim();
-  if (!secret) {
-    return res.status(503).json({ detail: "Задайте ADMIN_PASSWORD в .env" });
-  }
-  const auth = req.headers.authorization || "";
-  if (!auth.startsWith("Bearer ")) {
-    return res.status(401).json({ detail: "Требуется авторизация" });
-  }
-  const token = auth.slice(7).trim();
-  if (!safeEqual(token, secret)) {
-    return res.status(401).json({ detail: "Неверный пароль" });
-  }
-  next();
-}
+const PLATFORM_WEB = path.join(ROOT, "web", "platform");
 
 export function createAdminApp() {
   const app = express();
   app.set("trust proxy", true);
-  app.use(express.json());
-
-  app.post("/api/auth/login", (req, res) => {
-    const settings = getSettings();
-    const secret = settings.adminPassword.trim();
-    if (!secret) {
-      return res.status(503).json({ detail: "ADMIN_PASSWORD не задан" });
-    }
-    const password = String(req.body?.password ?? "");
-    if (!safeEqual(password, secret)) {
-      return res.status(401).json({ detail: "Неверный пароль" });
-    }
-    return res.json({ token: secret, brand: settings.shopName });
-  });
-
-  app.get("/api/meta", checkAuth, (req, res) => {
-    const s = getSettings();
-    res.json({
-      brand: s.shopName,
-      bot_name: "WIXYEZ METRO SHOP BOT",
-      reviews_url: s.reviewsUrl,
-    });
-  });
-
-  app.get("/api/stats", checkAuth, (req, res) => {
-    res.json(statsSummary());
-  });
-
-  app.get("/api/products", checkAuth, (req, res) => {
-    const items = listProducts().map((p) => ({
-      id: p.id,
-      title: p.title,
-      description: p.description,
-      amount: p.amount,
-      currency: p.currency,
-      category: p.category,
-      popular: p.popular,
-      extra_hint: p.extra_hint,
-      button_style: p.button_style,
-      active: p.active,
-    }));
-    res.json({ items });
-  });
-
-  app.post("/api/products", checkAuth, (req, res) => {
-    const p = createProduct(req.body || {});
-    res.json({ ok: true, id: p.id });
-  });
-
-  app.patch("/api/products/:productId", checkAuth, (req, res) => {
-    const data = Object.fromEntries(
-      Object.entries(req.body || {}).filter(([, v]) => v !== undefined),
-    );
-    const p = updateProduct(req.params.productId, data);
-    if (!p) return res.status(404).json({ detail: "Товар не найден" });
-    res.json({ ok: true });
-  });
-
-  app.delete("/api/products/:productId", checkAuth, (req, res) => {
-    if (!deleteProduct(req.params.productId)) {
-      return res.status(404).json({ detail: "Товар не найден" });
-    }
-    res.json({ ok: true });
-  });
-
-  app.get("/api/categories", checkAuth, (req, res) => {
-    res.json({ items: listCategorySettings() });
-  });
-
-  app.patch("/api/categories/:categoryId", checkAuth, (req, res) => {
-    setCategoryEnabled(req.params.categoryId, !!req.body?.enabled);
-    res.json({ ok: true });
-  });
-
-  app.get("/api/orders", checkAuth, (req, res) => {
-    const items = listRecentOrders(200).map((o) => ({
-      id: o.id,
-      user_id: o.user_id,
-      username: o.username,
-      product_title: o.product_title,
-      amount: o.amount,
-      currency: o.currency,
-      pubg_id: o.pubg_id,
-      status: o.status,
-      created_at: o.created_at,
-    }));
-    res.json({ items });
-  });
-
-  app.get("/api/promos", checkAuth, (req, res) => {
-    res.json({ items: listPromos() });
-  });
-
-  app.post("/api/promos", checkAuth, (req, res) => {
-    const { code, discount_percent, use_limit } = req.body || {};
-    createPromo(code, Number(discount_percent), Number(use_limit));
-    res.json({ ok: true });
-  });
-
-  app.delete("/api/promos/:code", checkAuth, (req, res) => {
-    if (!deletePromo(req.params.code)) return res.status(404).json({ detail: "Not found" });
-    res.json({ ok: true });
-  });
-
-  app.get("/api/users", checkAuth, (req, res) => {
-    res.json({ items: listUsers(500) });
-  });
+  app.use(express.json({ limit: "8mb" }));
 
   app.get("/health", (req, res) => {
-    res.json({ ok: true, service: "metro-shop-admin" });
+    res.json({ ok: true, service: "metro-shop-platform" });
   });
 
-  app.get("/", (req, res) => {
+  const platformRouter = express.Router();
+  mountPlatformApi(platformRouter);
+  app.use("/platform/api", platformRouter);
+
+  app.get("/platform", (req, res) => {
+    res.sendFile(path.join(PLATFORM_WEB, "index.html"));
+  });
+  app.use("/platform", express.static(PLATFORM_WEB));
+
+  const tenantApi = express.Router({ mergeParams: true });
+  tenantApi.use(tenantMiddleware);
+  const checkTenant = makeTenantAuth();
+  mountTenantApi(tenantApi, { checkTenantAuth: checkTenant });
+  app.use("/b/:slug/api", tenantApi);
+
+  app.get("/b/:slug", tenantMiddleware, (req, res) => {
     res.sendFile(path.resolve(WEB, "index.html"));
   });
+  app.get("/b/:slug/", tenantMiddleware, (req, res) => {
+    res.sendFile(path.resolve(WEB, "index.html"));
+  });
+  app.use("/b/:slug/static", tenantMiddleware, express.static(WEB));
 
+  app.get("/", (req, res) => res.redirect("/platform"));
   app.use("/static", express.static(WEB));
+
   return app;
 }
 
@@ -192,26 +73,16 @@ function listenOnPort(app, port) {
 export async function startAdminServer() {
   initDb();
   logPortDiagnostics();
-
   const ports = resolveListenPorts();
   const app = createAdminApp();
   const servers = [];
-
   for (const port of ports) {
-    const server = await listenOnPort(app, port);
-    if (server) servers.push(server);
+    const s = await listenOnPort(app, port);
+    if (s) servers.push(s);
   }
-
-  if (!servers.length) {
-    throw new Error("[metro-shop] Admin: не удалось занять ни один порт");
-  }
-
+  if (!servers.length) throw new Error("Admin: no ports available");
   const publicUrl = getSettings().adminPublicUrl?.replace(/\/$/, "");
-  console.log(`[metro-shop] Admin ports: ${ports.join(", ")}`);
-  if (publicUrl) {
-    console.log(`[metro-shop] Open in browser: ${publicUrl}`);
-    console.log(`[metro-shop] Health check: ${publicUrl}/health`);
-  }
-
+  console.log(`[metro-shop] Platform: ${publicUrl || ""}/platform`);
+  if (publicUrl) console.log(`[metro-shop] Tenant example: ${publicUrl}/b/main/`);
   return servers;
 }

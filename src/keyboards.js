@@ -1,4 +1,5 @@
 import { REVIEWS_CHANNEL_URL } from "./catalog.js";
+import { listMenuButtons } from "./platform/tenants.js";
 import { getProduct, listProducts } from "./repository.js";
 
 function btn(text, { callback_data, url, style } = {}) {
@@ -9,46 +10,55 @@ function btn(text, { callback_data, url, style } = {}) {
   return row;
 }
 
-export function inlineRootMenu(settings) {
+export function inlineRootMenu(settings, botId) {
   const reviews = settings.reviewsUrl || REVIEWS_CHANNEL_URL;
-  const site = settings.websiteUrl;
+  const items = listMenuButtons(botId).filter((b) => b.enabled);
 
-  const rows = [
-    [
-      btn("🛡️ Сопровождение", { callback_data: "cat_escort", style: "primary" }),
-      btn("⚡ Буст", { callback_data: "cat_boost", style: "primary" }),
-    ],
-    [btn("🔫 Снаряжение", { callback_data: "cat_gear", style: "primary" })],
-    [btn("Наши Отзывы ↗", { url: reviews, style: "danger" })],
-  ];
+  const siteBtn = items.find((b) => b.button_key === "website");
+  const rowsMap = new Map();
 
-  if (site) {
-    rows.push([
-      btn("САЙТ (БЕЗ VPN) ↗", { url: site, style: "primary" }),
-      btn("🛡️ Заказать сопровождение", { callback_data: "cat_escort", style: "primary" }),
-    ]);
-  } else {
-    rows.push([
-      btn("🛡️ Заказать сопровождение", { callback_data: "cat_escort", style: "primary" }),
+  for (const b of items) {
+    if (b.button_key === "website") continue;
+    const rowKey = b.row_order ?? 0;
+    if (!rowsMap.has(rowKey)) rowsMap.set(rowKey, []);
+    const cell = btn(b.label, {
+      callback_data: b.action_type === "callback" ? b.action_value : undefined,
+      url: b.action_type === "url" ? b.action_value : undefined,
+      style: b.style || "primary",
+    });
+    rowsMap.get(rowKey).push(cell);
+  }
+
+  const rows = [...rowsMap.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, cells]) => cells);
+
+  if (settings.websiteUrl && !siteBtn) {
+    const insertAt = Math.min(3, rows.length);
+    const siteRow = [
+      btn("САЙТ (БЕЗ VPN) ↗", { url: settings.websiteUrl, style: "primary" }),
+    ];
+    rows.splice(insertAt, 0, siteRow);
+  } else if (siteBtn?.action_value) {
+    const insertAt = Math.min(3, rows.length);
+    rows.splice(insertAt, 0, [
+      btn(siteBtn.label, { url: siteBtn.action_value, style: siteBtn.style || "primary" }),
     ]);
   }
 
-  rows.push(
-    [
-      btn("🎁 Промокоды", { callback_data: "menu_promo", style: "primary" }),
-      btn("🎖 Популярное", { callback_data: "menu_popular", style: "primary" }),
-    ],
-    [btn("👥 Реферальная система", { callback_data: "menu_referral", style: "success" })],
-    [btn("💬 Информация", { callback_data: "menu_info", style: "danger" })],
-    [btn("📢 Канал с отзывами ↗", { url: reviews, style: "primary" })],
-  );
+  if (!rows.length) {
+    rows.push(
+      [btn("🛡️ Сопровождение", { callback_data: "cat_escort", style: "primary" })],
+      [btn("Наши Отзывы ↗", { url: reviews, style: "danger" })],
+    );
+  }
 
   return { inline_keyboard: rows };
 }
 
-export function inlineEscortMenu() {
+export function inlineEscortMenu(botId) {
   const rows = [];
-  for (const product of listProducts({ activeOnly: true, category: "escort" })) {
+  for (const product of listProducts(botId, { activeOnly: true, category: "escort" })) {
     const price = product.amount > 0 ? Math.trunc(product.amount) : 0;
     const label = price
       ? `${product.title} — ${price} ₽`
@@ -69,9 +79,9 @@ export function inlineEscortMenu() {
   return { inline_keyboard: rows };
 }
 
-export function inlineProductList(items, backCallback = "menu_root") {
+export function inlineProductList(botId, items, backCallback = "menu_root") {
   const rows = items.map(([productId, label]) => {
-    const product = getProduct(productId);
+    const product = getProduct(botId, productId);
     let style = "primary";
     if (product && ["primary", "success", "danger"].includes(product.button_style)) {
       style = product.button_style;

@@ -24,6 +24,7 @@ export function getSettings() {
     telegramBotTokenFile: env("TELEGRAM_BOT_TOKEN_FILE") || env("BOT_TOKEN_FILE"),
     adminIds: env("ADMIN_IDS"),
     adminPassword: env("ADMIN_PASSWORD"),
+    superAdminPassword: env("SUPER_ADMIN_PASSWORD") || env("ADMIN_PASSWORD"),
     adminPort: Number(env("ADMIN_PORT", "3000")) || 3000,
     telegramBotUsername: env("TELEGRAM_BOT_USERNAME"),
     shopName: env("SHOP_NAME", "WIXYEZ METRO SHOP"),

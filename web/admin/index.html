@@ -4,7 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Metro Shop Admin</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css" id="app-css" />
+  <script>
+    (function () {
+      const m = location.pathname.match(/^\/b\/([^/]+)/);
+      if (m) {
+        const base = "/b/" + m[1] + "/static";
+        document.getElementById("app-css").href = base + "/styles.css";
+        window.__TENANT_SLUG__ = m[1];
+        window.__STATIC_BASE__ = base;
+        window.__API_BASE__ = "/b/" + m[1] + "/api";
+      } else {
+        window.__API_BASE__ = "/api";
+        window.__STATIC_BASE__ = "/static";
+      }
+    })();
+  </script>
 </head>
 <body>
   <div id="login-screen" class="login-screen">
@@ -30,6 +45,7 @@
       <nav class="nav">
         <a href="#home" data-page="home" class="nav-link active">Главная</a>
         <a href="#bots" data-page="bots" class="nav-link">Боты</a>
+        <a href="#buttons" data-page="buttons" class="nav-link">Кнопки бота</a>
         <a href="#products" data-page="products" class="nav-link">Товары</a>
         <a href="#markups" data-page="markups" class="nav-link">Наценки</a>
         <a href="#wallet" data-page="wallet" class="nav-link">Кошелёк</a>
@@ -67,6 +83,31 @@
           <p class="muted" id="bot-username">@wixyezmetroshop_bot</p>
           <span class="badge badge-green">Работает</span>
           <p class="muted">Бот: <code>python main.py</code></p>
+        </div>
+      </section>
+
+      <section id="page-buttons" class="page hidden">
+        <div class="page-head">
+          <h1>Кнопки главного меню</h1>
+          <button id="refresh-buttons" class="btn btn-ghost">Обновить</button>
+        </div>
+        <p class="muted">Меняйте текст, цвет (primary / success / danger) и ссылку. Строка = ряд в Telegram.</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Ключ</th>
+                <th>Текст</th>
+                <th>Тип</th>
+                <th>Значение</th>
+                <th>Цвет</th>
+                <th>Строка</th>
+                <th>Вкл</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="buttons-tbody"></tbody>
+          </table>
         </div>
       </section>
 
@@ -229,6 +270,9 @@
     </form>
   </dialog>
 
-  <script src="/static/admin-panel.js"></script>
+  <script src="/static/admin-panel.js" id="app-js"></script>
+  <script>
+    if (window.__STATIC_BASE__) document.getElementById("app-js").src = window.__STATIC_BASE__ + "/admin-panel.js";
+  </script>
 </body>
 </html>

@@ -1,5 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
-    const TOKEN_KEY = "metro_admin_token";
+    const slug = window.__TENANT_SLUG__ || "main";
+    const API_BASE = window.__API_BASE__ || `/b/${slug}/api`;
+    const TOKEN_KEY = `metro_admin_${slug}`;
 
     const $ = (s, r = document) => r.querySelector(s);
     const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -20,7 +22,8 @@ document.addEventListener("DOMContentLoaded", () => {
     async function api(path, opts = {}) {
       const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
       if (token()) headers.Authorization = `Bearer ${token()}`;
-      const res = await fetch(path, { ...opts, headers });
+      const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+      const res = await fetch(url, { ...opts, headers });
       if (res.status === 401) {
         logout();
         throw new Error("auth");
@@ -39,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const link = $(`.nav-link[data-page="${name}"]`);
       if (page) page.classList.remove("hidden");
       if (link) link.classList.add("active");
+      if (name === "buttons") loadButtons();
       if (name === "products") loadProducts();
       if (name === "promos") loadPromos();
       if (name === "invoices") loadOrders();
@@ -48,6 +52,56 @@ document.addEventListener("DOMContentLoaded", () => {
       if (name === "wallet") {
         $("#wallet-date").textContent = new Date().toLocaleString("ru-RU");
       }
+    }
+
+    async function loadButtons() {
+      const { items } = await api("/menu-buttons");
+      const tb = $("#buttons-tbody");
+      tb.innerHTML = items
+        .map(
+          (b) => `
+        <tr data-key="${b.button_key}">
+          <td><code>${b.button_key}</code></td>
+          <td><input class="inp-label" value="${escapeHtml(b.label)}" /></td>
+          <td>
+            <select class="inp-type">
+              <option value="callback" ${b.action_type === "callback" ? "selected" : ""}>callback</option>
+              <option value="url" ${b.action_type === "url" ? "selected" : ""}>url</option>
+            </select>
+          </td>
+          <td><input class="inp-value" value="${escapeHtml(b.action_value)}" style="min-width:180px" /></td>
+          <td>
+            <select class="inp-style">
+              <option value="primary" ${b.style === "primary" ? "selected" : ""}>primary</option>
+              <option value="success" ${b.style === "success" ? "selected" : ""}>success</option>
+              <option value="danger" ${b.style === "danger" ? "selected" : ""}>danger</option>
+            </select>
+          </td>
+          <td><input class="inp-row" type="number" value="${b.row_order}" style="width:60px" /></td>
+          <td><input type="checkbox" class="inp-enabled" ${b.enabled ? "checked" : ""} /></td>
+          <td><button class="btn btn-primary btn-sm btn-save-row">Сохранить</button></td>
+        </tr>`,
+        )
+        .join("");
+      tb.querySelectorAll(".btn-save-row").forEach((btn) => {
+        btn.onclick = async () => {
+          const tr = btn.closest("tr");
+          const key = tr.dataset.key;
+          await api(`/menu-buttons/${key}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              label: tr.querySelector(".inp-label").value,
+              action_type: tr.querySelector(".inp-type").value,
+              action_value: tr.querySelector(".inp-value").value,
+              style: tr.querySelector(".inp-style").value,
+              row_order: Number(tr.querySelector(".inp-row").value),
+              enabled: tr.querySelector(".inp-enabled").checked,
+            }),
+          });
+          btn.textContent = "OK";
+          setTimeout(() => (btn.textContent = "Сохранить"), 1000);
+        };
+      });
     }
 
     async function loadStats() {
@@ -234,6 +288,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       $("#logout-btn").onclick = logout;
       $("#add-product-btn").onclick = () => openProductModal();
+      $("#refresh-buttons").onclick = loadButtons;
       $("#refresh-products").onclick = loadProducts;
       $("#refresh-orders").onclick = loadOrders;
       $("#add-promo-btn").onclick = () => $("#promo-modal").showModal();
