@@ -1,3 +1,4 @@
+export const METRO_SHOP_CHANNEL_URL = "https://t.me/KotikexsMetroShop";
 export const REVIEWS_CHANNEL_URL = "https://t.me/KotikexsMetroShopOtziv";
 
 export const EMOJI_HELMET = "5204201311238629537";

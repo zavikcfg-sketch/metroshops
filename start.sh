@@ -3,19 +3,10 @@ set -e
 
 export DATA_DIR="${DATA_DIR:-/app/data}"
 export NODE_ENV="${NODE_ENV:-production}"
+# Bothost проксирует домен на PORT из панели
+export PORT="${PORT:-3000}"
+
 mkdir -p "$DATA_DIR"
+echo "[metro-shop] DATA_DIR=$DATA_DIR PORT=$PORT"
 
-echo "[metro-shop] DATA_DIR=$DATA_DIR"
-echo "[metro-shop] PORT=${PORT:-8080}"
-
-# Веб для домена Bothost (adminpanelbots.bothost.tech)
-node http-wrapper.js &
-WRAPPER_PID=$!
-
-cleanup() {
-  kill "$WRAPPER_PID" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
-
-echo "[metro-shop] Starting Telegram bot"
-exec node app.js
+exec node http-wrapper.js

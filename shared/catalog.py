@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
+METRO_SHOP_CHANNEL_URL = "https://t.me/KotikexsMetroShop"
 REVIEWS_CHANNEL_URL = "https://t.me/KotikexsMetroShopOtziv"
 
 # Premium emoji: шлем → броня → портфель → МК

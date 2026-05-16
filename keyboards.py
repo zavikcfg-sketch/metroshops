@@ -4,7 +4,7 @@ from typing import Literal
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from shared.catalog import REVIEWS_CHANNEL_URL
+from shared.catalog import METRO_SHOP_CHANNEL_URL, REVIEWS_CHANNEL_URL
 from shared.config import Settings
 from shared.repository import get_product, list_products
 
@@ -34,7 +34,6 @@ def _btn(
 
 def inline_root_menu(settings: Settings) -> InlineKeyboardMarkup:
     reviews = settings.reviews_url.strip() or REVIEWS_CHANNEL_URL
-    metro = settings.metro_shop_url.strip() or reviews
     site = settings.website_url.strip()
 
     rows: list[list[InlineKeyboardButton]] = [
@@ -46,7 +45,7 @@ def inline_root_menu(settings: Settings) -> InlineKeyboardMarkup:
             _btn("🔫 Снаряжение", callback_data="cat_gear", style="primary"),
         ],
         [
-            _btn("Самый качественный MetroShop ↗", url=metro, style="danger"),
+            _btn("Наши Отзывы ↗", url=reviews, style="danger"),
         ],
     ]
 

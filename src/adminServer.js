@@ -48,6 +48,7 @@ function checkAuth(req, res, next) {
 
 export function createAdminApp() {
   const app = express();
+  app.set("trust proxy", true);
   app.use(express.json());
 
   app.post("/api/auth/login", (req, res) => {
@@ -173,10 +174,19 @@ export function startAdminServer() {
   const settings = getSettings();
   const port = settings.resolvedAdminPort();
   const app = createAdminApp();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(port, "0.0.0.0", () => {
+      const settings = getSettings();
+      const publicUrl = settings.adminPublicUrl?.replace(/\/$/, "");
       console.log(`[metro-shop] Admin panel http://0.0.0.0:${port}`);
+      if (publicUrl) {
+        console.log(`[metro-shop] Public URL: ${publicUrl}`);
+      }
       resolve(server);
+    });
+    server.on("error", (err) => {
+      console.error(`[metro-shop] Admin listen failed on port ${port}:`, err.message);
+      reject(err);
     });
   });
 }

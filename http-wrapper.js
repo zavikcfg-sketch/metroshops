@@ -1,10 +1,13 @@
 /**
- * HTTP-обёртка для Bothost (домен / админ-панель).
- * Слушает PORT из панели — на него смотрит https://*.bothost.tech
+ * Точка входа Bothost: админка на PORT + Telegram-бот.
+ * Домен: https://adminpanelbots.bothost.tech
  */
-import { mainAdmin } from "./src/index.js";
+import { main } from "./src/index.js";
 
-mainAdmin().catch((err) => {
-  console.error("[metro-shop] http-wrapper fatal:", err);
+const port = process.env.PORT || "8080";
+console.log(`[metro-shop] http-wrapper starting, PORT=${port}`);
+
+main().catch((err) => {
+  console.error("[metro-shop] Fatal:", err);
   process.exit(1);
 });

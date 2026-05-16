@@ -11,7 +11,6 @@ function btn(text, { callback_data, url, style } = {}) {
 
 export function inlineRootMenu(settings) {
   const reviews = settings.reviewsUrl || REVIEWS_CHANNEL_URL;
-  const metro = settings.metroShopUrl || reviews;
   const site = settings.websiteUrl;
 
   const rows = [
@@ -20,7 +19,7 @@ export function inlineRootMenu(settings) {
       btn("⚡ Буст", { callback_data: "cat_boost", style: "primary" }),
     ],
     [btn("🔫 Снаряжение", { callback_data: "cat_gear", style: "primary" })],
-    [btn("Самый качественный MetroShop ↗", { url: metro, style: "danger" })],
+    [btn("Наши Отзывы ↗", { url: reviews, style: "danger" })],
   ];
 
   if (site) {
