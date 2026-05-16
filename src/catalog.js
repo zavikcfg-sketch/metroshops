@@ -6,6 +6,14 @@ export const EMOJI_ARMOR = "5201907777227730330";
 export const EMOJI_BAG = "5201773765658160740";
 export const EMOJI_MK = "5204105005186952289";
 
+/** Премиум-эмодзи для кнопок меню (icon_custom_emoji_id). */
+export const PRESET_CUSTOM_EMOJIS = [
+  { id: EMOJI_HELMET, label: "Шлем", glyph: "🪖" },
+  { id: EMOJI_ARMOR, label: "Броня", glyph: "🧥" },
+  { id: EMOJI_BAG, label: "Рюкзак", glyph: "👜" },
+  { id: EMOJI_MK, label: "Оружие", glyph: "🔫" },
+];
+
 export const ESCORT_INFO_FULL =
   "<b>🔑 Опыт, которому можно доверять</b>\n" +
   "У нас более 5 лет игры и 2 года профессиональных сопровождений.\n\n" +

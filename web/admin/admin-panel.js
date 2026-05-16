@@ -89,54 +89,195 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    async function loadButtons() {
-      const { items } = await api("/menu-buttons");
-      const tb = $("#buttons-tbody");
-      tb.innerHTML = items
+    let menuButtonsCache = [];
+    let emojiPresetsCache = [];
+
+    function readCard(card) {
+      return {
+        button_key: card.dataset.key,
+        label: card.querySelector(".inp-label").value,
+        action_type: card.querySelector(".inp-type").value,
+        action_value: card.querySelector(".inp-value").value,
+        style: card.querySelector(".inp-style").value,
+        row_order: Number(card.querySelector(".inp-row").value),
+        sort_order: Number(card.querySelector(".inp-sort").value),
+        icon_emoji_id: card.querySelector(".inp-emoji").value.trim() || null,
+        enabled: card.querySelector(".inp-enabled").checked,
+      };
+    }
+
+    function renderKeyboardPreview(items) {
+      const enabled = items.filter((b) => b.enabled);
+      const rows = new Map();
+      for (const b of enabled) {
+        const r = b.row_order ?? 0;
+        if (!rows.has(r)) rows.set(r, []);
+        rows.get(r).push(b);
+      }
+      const preview = $("#tg-keyboard-preview");
+      preview.innerHTML = "";
+      [...rows.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .forEach(([, cells]) => {
+          const rowEl = document.createElement("div");
+          rowEl.className = "tg-kb-row";
+          cells
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            .forEach((b) => {
+              const el = document.createElement("span");
+              el.className = `tg-kb-btn style-${b.style || "primary"}`;
+              if (b.icon_emoji_id) {
+                const badge = document.createElement("span");
+                badge.className = "emoji-badge";
+                badge.title = b.icon_emoji_id;
+                badge.textContent = "✨";
+                el.appendChild(badge);
+              }
+              el.appendChild(document.createTextNode(b.label || b.button_key));
+              rowEl.appendChild(el);
+            });
+          preview.appendChild(rowEl);
+        });
+      if (!preview.children.length) {
+        preview.innerHTML = '<p class="muted small">Нет активных кнопок</p>';
+      }
+    }
+
+    function bindMenuCard(card) {
+      const save = async () => {
+        const body = readCard(card);
+        await api(`/menu-buttons/${body.button_key}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+        const idx = menuButtonsCache.findIndex((x) => x.button_key === body.button_key);
+        if (idx >= 0) menuButtonsCache[idx] = { ...menuButtonsCache[idx], ...body };
+        renderKeyboardPreview(menuButtonsCache);
+        const btn = card.querySelector(".btn-save-row");
+        btn.textContent = "Сохранено ✓";
+        setTimeout(() => (btn.textContent = "Сохранить"), 1200);
+      };
+      card.querySelector(".btn-save-row").onclick = save;
+      card.querySelectorAll("input, select").forEach((el) => {
+        el.addEventListener("change", () => {
+          const body = readCard(card);
+          const idx = menuButtonsCache.findIndex((x) => x.button_key === body.button_key);
+          if (idx >= 0) menuButtonsCache[idx] = { ...menuButtonsCache[idx], ...body };
+          card.classList.toggle("disabled", !body.enabled);
+          renderKeyboardPreview(menuButtonsCache);
+        });
+      });
+      card.querySelector(".btn-del-row")?.addEventListener("click", async () => {
+        if (!confirm(`Удалить кнопку «${card.dataset.key}»?`)) return;
+        await api(`/menu-buttons/${card.dataset.key}`, { method: "DELETE" });
+        await loadButtons();
+      });
+    }
+
+    function menuButtonCardHtml(b) {
+      return `
+        <article class="menu-btn-card ${b.enabled ? "" : "disabled"}" data-key="${escapeHtml(b.button_key)}">
+          <div class="menu-btn-card-head">
+            <code>${escapeHtml(b.button_key)}</code>
+            <label class="checkbox" style="margin:0;font-size:13px;color:var(--text)">
+              <input type="checkbox" class="inp-enabled" ${b.enabled ? "checked" : ""} /> Вкл
+            </label>
+          </div>
+          <div class="menu-btn-card-fields">
+            <label class="full">Текст кнопки
+              <input class="inp-label" value="${escapeHtml(b.label)}" />
+            </label>
+            <label>Премиум emoji ID
+              <input class="inp-emoji" value="${escapeHtml(b.icon_emoji_id || "")}" placeholder="5204201311238629537" />
+            </label>
+            <label>Тип
+              <select class="inp-type">
+                <option value="callback" ${b.action_type === "callback" ? "selected" : ""}>callback</option>
+                <option value="url" ${b.action_type === "url" ? "selected" : ""}>url</option>
+                <option value="web_app" ${b.action_type === "web_app" ? "selected" : ""}>web_app</option>
+              </select>
+            </label>
+            <label class="full">Значение
+              <input class="inp-value" value="${escapeHtml(b.action_value)}" />
+            </label>
+            <label>Цвет
+              <select class="inp-style">
+                <option value="primary" ${b.style === "primary" ? "selected" : ""}>primary</option>
+                <option value="success" ${b.style === "success" ? "selected" : ""}>success</option>
+                <option value="danger" ${b.style === "danger" ? "selected" : ""}>danger</option>
+              </select>
+            </label>
+            <label>Ряд<input class="inp-row" type="number" value="${b.row_order ?? 0}" /></label>
+            <label>Порядок<input class="inp-sort" type="number" value="${b.sort_order ?? 0}" /></label>
+          </div>
+          <div class="menu-btn-card-actions">
+            <button type="button" class="btn btn-primary btn-sm btn-save-row">Сохранить</button>
+            <button type="button" class="btn btn-danger btn-sm btn-del-row">Удалить</button>
+          </div>
+        </article>`;
+    }
+
+    async function loadEmojiPresets() {
+      if (emojiPresetsCache.length) return emojiPresetsCache;
+      try {
+        const { items } = await api("/menu-buttons/emoji-presets");
+        emojiPresetsCache = items || [];
+      } catch {
+        emojiPresetsCache = [];
+      }
+      return emojiPresetsCache;
+    }
+
+    function renderEmojiPresets(container, onPick) {
+      container.innerHTML = emojiPresetsCache
         .map(
-          (b) => `
-        <tr data-key="${b.button_key}">
-          <td><code>${b.button_key}</code></td>
-          <td><input class="inp-label" value="${escapeHtml(b.label)}" /></td>
-          <td>
-            <select class="inp-type">
-              <option value="callback" ${b.action_type === "callback" ? "selected" : ""}>callback</option>
-              <option value="url" ${b.action_type === "url" ? "selected" : ""}>url</option>
-            </select>
-          </td>
-          <td><input class="inp-value" value="${escapeHtml(b.action_value)}" style="min-width:180px" /></td>
-          <td>
-            <select class="inp-style">
-              <option value="primary" ${b.style === "primary" ? "selected" : ""}>primary</option>
-              <option value="success" ${b.style === "success" ? "selected" : ""}>success</option>
-              <option value="danger" ${b.style === "danger" ? "selected" : ""}>danger</option>
-            </select>
-          </td>
-          <td><input class="inp-row" type="number" value="${b.row_order}" style="width:60px" /></td>
-          <td><input type="checkbox" class="inp-enabled" ${b.enabled ? "checked" : ""} /></td>
-          <td><button class="btn btn-primary btn-sm btn-save-row">Сохранить</button></td>
-        </tr>`,
+          (e) =>
+            `<button type="button" class="emoji-preset-btn" data-id="${e.id}" title="${e.id}">${e.glyph} ${escapeHtml(e.label)}</button>`,
         )
         .join("");
-      tb.querySelectorAll(".btn-save-row").forEach((btn) => {
-        btn.onclick = async () => {
-          const tr = btn.closest("tr");
-          const key = tr.dataset.key;
-          await api(`/menu-buttons/${key}`, {
-            method: "PUT",
-            body: JSON.stringify({
-              label: tr.querySelector(".inp-label").value,
-              action_type: tr.querySelector(".inp-type").value,
-              action_value: tr.querySelector(".inp-value").value,
-              style: tr.querySelector(".inp-style").value,
-              row_order: Number(tr.querySelector(".inp-row").value),
-              enabled: tr.querySelector(".inp-enabled").checked,
-            }),
-          });
-          btn.textContent = "OK";
-          setTimeout(() => (btn.textContent = "Сохранить"), 1000);
-        };
+      container.querySelectorAll(".emoji-preset-btn").forEach((btn) => {
+        btn.onclick = () => onPick(btn.dataset.id);
       });
+    }
+
+    async function loadButtons() {
+      const { items, mini_app_url } = await api("/menu-buttons");
+      menuButtonsCache = items;
+      const grid = $("#buttons-grid");
+      grid.innerHTML = items.map((b) => menuButtonCardHtml(b)).join("");
+      grid.querySelectorAll(".menu-btn-card").forEach(bindMenuCard);
+      renderKeyboardPreview(items);
+      if (mini_app_url) {
+        const link = $("#miniapp-link");
+        link.href = mini_app_url;
+        link.classList.remove("hidden");
+      }
+      await loadEmojiPresets();
+    }
+
+    function openMenuBtnModal(editBtn = null) {
+      const modal = $("#menu-btn-modal");
+      const form = $("#menu-btn-form");
+      form.reset();
+      form.edit_mode.value = editBtn ? "1" : "";
+      const keyInput = form.button_key;
+      keyInput.disabled = !!editBtn;
+      $("#menu-btn-modal-title").textContent = editBtn ? "Редактировать кнопку" : "Новая кнопка";
+      if (editBtn) {
+        keyInput.value = editBtn.button_key;
+        form.label.value = editBtn.label;
+        form.icon_emoji_id.value = editBtn.icon_emoji_id || "";
+        form.action_type.value = editBtn.action_type;
+        form.action_value.value = editBtn.action_value;
+        form.style.value = editBtn.style || "primary";
+        form.row_order.value = editBtn.row_order ?? 0;
+        form.sort_order.value = editBtn.sort_order ?? 0;
+        form.enabled.checked = !!editBtn.enabled;
+      }
+      renderEmojiPresets($("#emoji-presets"), (id) => {
+        form.icon_emoji_id.value = id;
+      });
+      modal.showModal();
     }
 
     async function loadStats() {
@@ -327,6 +468,33 @@ document.addEventListener("DOMContentLoaded", () => {
       $("#bot-btn-stop").onclick = () => botControl("stop");
       $("#bot-btn-restart").onclick = () => botControl("restart");
       $("#refresh-buttons").onclick = loadButtons;
+      $("#add-menu-btn").onclick = () => openMenuBtnModal();
+
+      $("#menu-btn-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const key = String(fd.get("button_key") || "")
+          .trim()
+          .replace(/[^a-z0-9_]/gi, "_");
+        const body = {
+          button_key: key,
+          label: fd.get("label"),
+          action_type: fd.get("action_type"),
+          action_value: fd.get("action_value"),
+          style: fd.get("style"),
+          row_order: Number(fd.get("row_order")),
+          sort_order: Number(fd.get("sort_order")),
+          icon_emoji_id: String(fd.get("icon_emoji_id") || "").trim() || null,
+          enabled: fd.get("enabled") === "on",
+        };
+        if (fd.get("edit_mode")) {
+          await api(`/menu-buttons/${key}`, { method: "PUT", body: JSON.stringify(body) });
+        } else {
+          await api("/menu-buttons", { method: "POST", body: JSON.stringify(body) });
+        }
+        $("#menu-btn-modal").close();
+        loadButtons();
+      };
       $("#refresh-products").onclick = loadProducts;
       $("#refresh-orders").onclick = loadOrders;
       $("#add-promo-btn").onclick = () => $("#promo-modal").showModal();

@@ -2,7 +2,16 @@ import { CATEGORIES, BOOST_PRODUCTS, ESCORT_PRODUCTS, GEAR_PRODUCTS } from "../c
 import { REVIEWS_CHANNEL_URL, METRO_SHOP_CHANNEL_URL } from "../catalog.js";
 
 export const DEFAULT_MENU_BUTTONS = [
-  { button_key: "cat_escort", label: "🛡️ Сопровождение", action_type: "callback", action_value: "cat_escort", style: "primary", row_order: 0, sort_order: 0 },
+  {
+    button_key: "shop_app",
+    label: "🛒 Магазин",
+    action_type: "web_app",
+    action_value: "__SHOP_URL__",
+    style: "success",
+    row_order: 0,
+    sort_order: 0,
+  },
+  { button_key: "cat_escort", label: "🛡️ Сопровождение", action_type: "callback", action_value: "cat_escort", style: "primary", row_order: 0, sort_order: 1 },
   { button_key: "cat_boost", label: "⚡ Буст", action_type: "callback", action_value: "cat_boost", style: "primary", row_order: 0, sort_order: 1 },
   { button_key: "cat_gear", label: "🔫 Снаряжение", action_type: "callback", action_value: "cat_gear", style: "primary", row_order: 1, sort_order: 0 },
   { button_key: "reviews_main", label: "Наши Отзывы ↗", action_type: "url", action_value: REVIEWS_CHANNEL_URL, style: "danger", row_order: 2, sort_order: 0 },
@@ -58,9 +67,11 @@ export function seedCategoriesForBot(conn, botId) {
 export function seedMenuForBot(conn, botId, overrides = {}) {
   const ins = conn.prepare(`
     INSERT OR REPLACE INTO menu_buttons (
-      bot_id, button_key, label, action_type, action_value, style, row_order, sort_order, enabled
+      bot_id, button_key, label, action_type, action_value, style,
+      row_order, sort_order, enabled, icon_emoji_id
     ) VALUES (
-      @bot_id, @button_key, @label, @action_type, @action_value, @style, @row_order, @sort_order, 1
+      @bot_id, @button_key, @label, @action_type, @action_value, @style,
+      @row_order, @sort_order, 1, @icon_emoji_id
     )
   `);
   for (const b of DEFAULT_MENU_BUTTONS) {
@@ -74,6 +85,7 @@ export function seedMenuForBot(conn, botId, overrides = {}) {
       style: o.style ?? b.style,
       row_order: o.row_order ?? b.row_order,
       sort_order: o.sort_order ?? b.sort_order,
+      icon_emoji_id: o.icon_emoji_id ?? b.icon_emoji_id ?? null,
     });
   }
 }

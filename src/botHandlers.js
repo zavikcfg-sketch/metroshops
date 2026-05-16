@@ -9,6 +9,7 @@ import {
   inlineProductList,
   inlineRootMenu,
 } from "./keyboards.js";
+import { miniAppUrlForTenant } from "./platform/tenants.js";
 import { tenantSettings } from "./platform/tenants.js";
 import {
   createPaymentInvoice,
@@ -126,6 +127,32 @@ export async function runTenantBot(tenant) {
 
   bot.command("start", async (ctx) => {
     if (ctx.from) registerUser(botId, ctx.from.id, ctx.from.username, ctx.from.first_name);
+    const payload = ctx.message?.text?.split(/\s+/)[1] || "";
+    if (payload.startsWith("buy_")) {
+      const productId = decodeURIComponent(payload.slice(4));
+      const product = getProduct(botId, productId);
+      if (product) {
+        ctx.session.orderStep = "pubg_id";
+        ctx.session.productId = product.id;
+        const price = product.amount > 0 ? Math.trunc(product.amount) : null;
+        const pricePart = price == null ? "Цена: по согласованию\n\n" : `Цена: ${price} ₽\n\n`;
+        const text =
+          product.category === "escort"
+            ? buildEscortPickMessage({
+                title: product.title,
+                productId: product.id,
+                priceRub: price,
+                extraHint: product.extra_hint,
+              })
+            : `<b>Вы выбрали: ${product.title}</b>\n\n${pricePart}` +
+              `Введите <b>Player ID</b> PUBG Mobile.\nОтмена: /cancel`;
+        await ctx.reply(text, {
+          parse_mode: "HTML",
+          reply_markup: inlineConfirmOrder(product.id, botId),
+        });
+        return;
+      }
+    }
     await sendWelcome(bot, ctx.chat.id, settings, botId);
   });
 
@@ -427,6 +454,21 @@ export async function runTenantBot(tenant) {
 
   const me = await bot.api.getMe();
   console.log(`[metro-shop] Бот @${me.username} (${tenant.display_name})`);
+
+  const shopUrl = miniAppUrlForTenant(tenant);
+  if (shopUrl) {
+    try {
+      await bot.api.setChatMenuButton({
+        menu_button: {
+          type: "web_app",
+          text: "🛒 Магазин",
+          web_app: { url: shopUrl },
+        },
+      });
+    } catch (e) {
+      console.warn(`[metro-shop] Menu button @${tenant.slug}:`, e.message);
+    }
+  }
 
   const wh = await bot.api.getWebhookInfo();
   if (wh.url) await bot.api.deleteWebhook({ drop_pending_updates: false });

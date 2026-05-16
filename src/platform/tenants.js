@@ -62,6 +62,10 @@ function migrateTenantColumns(conn) {
     }
   }
   migrateCompositePrimaryKeys(conn);
+  const menuCols = conn.prepare("PRAGMA table_info(menu_buttons)").all();
+  if (!menuCols.some((c) => c.name === "icon_emoji_id")) {
+    conn.exec("ALTER TABLE menu_buttons ADD COLUMN icon_emoji_id TEXT");
+  }
 }
 
 function ensureLegacyTenant(conn) {
@@ -299,11 +303,13 @@ export function listMenuButtons(botId) {
 }
 
 export function upsertMenuButton(botId, data) {
+  const iconId = data.icon_emoji_id ? String(data.icon_emoji_id).trim() : null;
   connect()
     .prepare(
       `INSERT INTO menu_buttons (
-        bot_id, button_key, label, action_type, action_value, style, row_order, sort_order, enabled
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        bot_id, button_key, label, action_type, action_value, style,
+        row_order, sort_order, enabled, icon_emoji_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(bot_id, button_key) DO UPDATE SET
         label = excluded.label,
         action_type = excluded.action_type,
@@ -311,7 +317,8 @@ export function upsertMenuButton(botId, data) {
         style = excluded.style,
         row_order = excluded.row_order,
         sort_order = excluded.sort_order,
-        enabled = excluded.enabled`,
+        enabled = excluded.enabled,
+        icon_emoji_id = excluded.icon_emoji_id`,
     )
     .run(
       botId,
@@ -323,7 +330,21 @@ export function upsertMenuButton(botId, data) {
       Number(data.row_order ?? 0),
       Number(data.sort_order ?? 0),
       data.enabled === false ? 0 : 1,
+      iconId || null,
     );
+}
+
+export function deleteMenuButton(botId, buttonKey) {
+  const r = connect()
+    .prepare("DELETE FROM menu_buttons WHERE bot_id = ? AND button_key = ?")
+    .run(botId, buttonKey);
+  return r.changes > 0;
+}
+
+export function miniAppUrlForTenant(tenant) {
+  const base = getSettings().adminPublicUrl?.replace(/\/$/, "") || "";
+  if (!base || !tenant?.slug) return "";
+  return `${base}/b/${tenant.slug}/shop/`;
 }
 
 export function tenantSettings(tenant) {

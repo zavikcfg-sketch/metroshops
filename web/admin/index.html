@@ -93,28 +93,60 @@
 
       <section id="page-buttons" class="page hidden">
         <div class="page-head">
-          <h1>Кнопки главного меню</h1>
-          <button id="refresh-buttons" class="btn btn-ghost">Обновить</button>
+          <div>
+            <h1>Кнопки главного меню</h1>
+            <p class="muted page-sub">Текст, премиум-эмодзи, цвет и ряд. Справа — предпросмотр клавиатуры.</p>
+          </div>
+          <div class="page-head-actions">
+            <a id="miniapp-link" href="#" target="_blank" rel="noopener" class="btn btn-ghost">↗ Mini App</a>
+            <button type="button" id="add-menu-btn" class="btn btn-primary">+ Кнопка</button>
+            <button type="button" id="refresh-buttons" class="btn btn-ghost">Обновить</button>
+          </div>
         </div>
-        <p class="muted">Меняйте текст, цвет (primary / success / danger) и ссылку. Строка = ряд в Telegram.</p>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Ключ</th>
-                <th>Текст</th>
-                <th>Тип</th>
-                <th>Значение</th>
-                <th>Цвет</th>
-                <th>Строка</th>
-                <th>Вкл</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="buttons-tbody"></tbody>
-          </table>
+        <div class="btn-editor-layout">
+          <div id="buttons-grid" class="btn-cards-grid"></div>
+          <aside class="btn-preview-panel card">
+            <h3>Предпросмотр в Telegram</h3>
+            <p class="muted small">Одинаковый «Ряд» = одна строка кнопок</p>
+            <div id="tg-keyboard-preview" class="tg-kb-preview"></div>
+            <p class="muted small preview-hint">Премиум emoji ID — иконка слева от текста (Bot API 7+).</p>
+          </aside>
         </div>
       </section>
+
+      <dialog id="menu-btn-modal" class="modal menu-btn-modal">
+        <form id="menu-btn-form" class="modal-body">
+          <input type="hidden" name="edit_mode" value="" />
+          <h3 id="menu-btn-modal-title">Новая кнопка</h3>
+          <label>Ключ<input name="button_key" pattern="[a-z0-9_]+" placeholder="my_button" /></label>
+          <label>Текст<input name="label" required /></label>
+          <label>Премиум emoji ID<input name="icon_emoji_id" placeholder="5204201311238629537" /></label>
+          <div id="emoji-presets" class="emoji-presets"></div>
+          <label>Тип
+            <select name="action_type">
+              <option value="callback">callback</option>
+              <option value="url">url</option>
+              <option value="web_app">web_app (Mini App)</option>
+            </select>
+          </label>
+          <label>Значение<input name="action_value" /></label>
+          <p class="muted small">Mini App: <code>__SHOP_URL__</code></p>
+          <div class="form-row-2">
+            <label>Цвет<select name="style">
+              <option value="primary">primary</option>
+              <option value="success">success</option>
+              <option value="danger">danger</option>
+            </select></label>
+            <label>Ряд<input name="row_order" type="number" min="0" value="0" /></label>
+            <label>Порядок<input name="sort_order" type="number" min="0" value="0" /></label>
+          </div>
+          <label class="checkbox"><input name="enabled" type="checkbox" checked /> Вкл</label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-close>Отмена</button>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+          </div>
+        </form>
+      </dialog>
 
       <section id="page-products" class="page hidden">
         <div class="page-head">

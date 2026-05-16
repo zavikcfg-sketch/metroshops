@@ -12,9 +12,12 @@ import {
   statsSummary,
   updateProduct,
 } from "../repository.js";
+import { PRESET_CUSTOM_EMOJIS } from "../catalog.js";
 import {
+  deleteMenuButton,
   getTenantBySlug,
   listMenuButtons,
+  miniAppUrlForTenant,
   tenantSettings,
   upsertMenuButton,
 } from "../platform/tenants.js";
@@ -132,7 +135,40 @@ export function mountTenantApi(router, { checkTenantAuth }) {
   });
 
   router.get("/menu-buttons", checkTenantAuth, (req, res) => {
-    res.json({ items: listMenuButtons(req.tenant.id) });
+    res.json({
+      items: listMenuButtons(req.tenant.id),
+      mini_app_url: miniAppUrlForTenant(req.tenant),
+    });
+  });
+
+  router.get("/menu-buttons/emoji-presets", checkTenantAuth, (req, res) => {
+    res.json({ items: PRESET_CUSTOM_EMOJIS });
+  });
+
+  router.post("/menu-buttons", checkTenantAuth, (req, res) => {
+    const body = req.body || {};
+    const button_key = String(body.button_key ?? "")
+      .trim()
+      .replace(/[^a-z0-9_]/gi, "_")
+      .slice(0, 48);
+    if (!button_key) {
+      return res.status(400).json({ detail: "Укажите ключ кнопки (латиница)" });
+    }
+    if (!body.label?.trim()) {
+      return res.status(400).json({ detail: "Укажите текст кнопки" });
+    }
+    upsertMenuButton(req.tenant.id, {
+      button_key,
+      label: body.label.trim(),
+      action_type: body.action_type || "callback",
+      action_value: body.action_value ?? button_key,
+      style: body.style || "primary",
+      row_order: body.row_order ?? 0,
+      sort_order: body.sort_order ?? 0,
+      enabled: body.enabled !== false,
+      icon_emoji_id: body.icon_emoji_id || null,
+    });
+    res.json({ ok: true, button_key });
   });
 
   router.put("/menu-buttons/:key", checkTenantAuth, (req, res) => {
@@ -146,7 +182,15 @@ export function mountTenantApi(router, { checkTenantAuth }) {
       row_order: body.row_order,
       sort_order: body.sort_order,
       enabled: body.enabled !== false,
+      icon_emoji_id: body.icon_emoji_id || null,
     });
+    res.json({ ok: true });
+  });
+
+  router.delete("/menu-buttons/:key", checkTenantAuth, (req, res) => {
+    if (!deleteMenuButton(req.tenant.id, req.params.key)) {
+      return res.status(404).json({ detail: "Кнопка не найдена" });
+    }
     res.json({ ok: true });
   });
 

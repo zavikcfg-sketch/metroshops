@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Metro Shop</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="styles.css" id="shop-css" />
+  <script>
+    (function () {
+      const m = location.pathname.match(/^\/b\/([^/]+)\/shop/);
+      window.__SHOP_SLUG__ = m ? m[1] : "main";
+      window.__SHOP_API__ = "/b/" + window.__SHOP_SLUG__ + "/shop/api";
+      if (m) {
+        document.getElementById("shop-css").href = "/b/" + m[1] + "/shop/styles.css";
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div class="bg-layer" aria-hidden="true">
+    <div class="bg-glow bg-glow-a"></div>
+    <div class="bg-glow bg-glow-b"></div>
+    <div class="bg-grid"></div>
+  </div>
+
+  <div id="app" class="shop-app">
+    <header class="shop-header">
+      <button type="button" class="pill-btn" id="btn-profile">Профиль</button>
+      <div class="hero-avatar-wrap">
+        <img src="avatar.svg" alt="" class="hero-avatar" id="shop-avatar" width="88" height="88" />
+        <span class="hero-ring"></span>
+      </div>
+      <p class="hero-tagline" id="hero-tagline">Metro Royale · 24/7</p>
+    </header>
+
+    <div class="hero-banner glass" id="hero-banner">
+      <div class="hero-banner-text">
+        <h1>ТОВАРЫ<br /><span class="accent">METRO</span></h1>
+        <p class="hero-sub">Сопровождение · буст · снаряжение</p>
+      </div>
+      <button type="button" class="banner-cta" id="banner-cta">Перейти</button>
+    </div>
+
+    <p class="section-label">КАТЕГОРИИ</p>
+    <div class="cat-grid" id="cat-grid"></div>
+
+    <p class="section-label" id="products-label">ПОПУЛЯРНОЕ</p>
+    <div class="product-grid" id="product-grid"></div>
+
+    <div class="shop-footer glass">
+      <a href="#" id="link-reviews" class="footer-link">📢 Отзывы</a>
+      <a href="#" id="link-support" class="footer-link">💬 Поддержка</a>
+    </div>
+  </div>
+
+  <div id="view-category" class="shop-view hidden">
+    <header class="sub-header">
+      <button type="button" class="back-btn" data-back>←</button>
+      <h2 id="cat-title">Категория</h2>
+    </header>
+    <div class="product-grid" id="cat-products"></div>
+  </div>
+
+  <div id="loader" class="loader">Загрузка…</div>
+
+  <script src="app.js" id="shop-js"></script>
+  <script>
+    if (window.__SHOP_SLUG__) {
+      document.getElementById("shop-js").src = "/b/" + window.__SHOP_SLUG__ + "/shop/app.js";
+    }
+  </script>
+</body>
+</html>

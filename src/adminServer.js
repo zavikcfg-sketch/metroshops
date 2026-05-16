@@ -10,9 +10,11 @@ import {
   mountTenantApi,
   tenantMiddleware,
 } from "./routes/tenantApi.js";
+import { mountShopApi } from "./routes/shopApi.js";
 
 const WEB = path.join(ROOT, "web", "admin");
 const PLATFORM_WEB = path.join(ROOT, "web", "platform");
+const SHOP_WEB = path.join(ROOT, "web", "miniapp");
 
 export function createAdminApp() {
   const app = express();
@@ -45,6 +47,16 @@ export function createAdminApp() {
     res.sendFile(path.resolve(WEB, "index.html"));
   });
   app.use("/b/:slug/static", tenantMiddleware, express.static(WEB));
+
+  const shopApi = express.Router({ mergeParams: true });
+  shopApi.use(tenantMiddleware);
+  mountShopApi(shopApi);
+  app.use("/b/:slug/shop/api", shopApi);
+
+  app.get(["/b/:slug/shop", "/b/:slug/shop/"], tenantMiddleware, (req, res) => {
+    res.sendFile(path.resolve(SHOP_WEB, "index.html"));
+  });
+  app.use("/b/:slug/shop", tenantMiddleware, express.static(SHOP_WEB));
 
   app.get("/", (req, res) => res.redirect("/platform"));
   app.use("/static", express.static(WEB));

@@ -1,13 +1,32 @@
 import { REVIEWS_CHANNEL_URL } from "./catalog.js";
-import { listMenuButtons } from "./platform/tenants.js";
+import { getTenantById, listMenuButtons, miniAppUrlForTenant } from "./platform/tenants.js";
 import { getProduct, listProducts } from "./repository.js";
 
-function btn(text, { callback_data, url, style } = {}) {
+function btn(text, { callback_data, url, style, icon_custom_emoji_id, web_app } = {}) {
   const row = { text };
   if (callback_data) row.callback_data = callback_data;
   if (url) row.url = url;
+  if (web_app) row.web_app = web_app;
   if (style) row.style = style;
+  if (icon_custom_emoji_id) row.icon_custom_emoji_id = String(icon_custom_emoji_id);
   return row;
+}
+
+function resolveActionValue(b, botId) {
+  if (b.action_type === "web_app") {
+    const val = (b.action_value || "").trim();
+    if (!val || val === "__SHOP_URL__") {
+      const tenant = getTenantById(botId);
+      if (tenant) {
+        const url = miniAppUrlForTenant(tenant);
+        if (url) return { web_app: { url } };
+      }
+    }
+    return { web_app: { url: val } };
+  }
+  if (b.action_type === "url") return { url: b.action_value };
+  if (b.action_type === "callback") return { callback_data: b.action_value };
+  return {};
 }
 
 export function inlineRootMenu(settings, botId) {
@@ -21,17 +40,22 @@ export function inlineRootMenu(settings, botId) {
     if (b.button_key === "website") continue;
     const rowKey = b.row_order ?? 0;
     if (!rowsMap.has(rowKey)) rowsMap.set(rowKey, []);
+    const action = resolveActionValue(b, botId);
+    if (b.action_type === "web_app" && !action.web_app?.url) continue;
+
     const cell = btn(b.label, {
-      callback_data: b.action_type === "callback" ? b.action_value : undefined,
-      url: b.action_type === "url" ? b.action_value : undefined,
+      ...action,
       style: b.style || "primary",
+      icon_custom_emoji_id: b.icon_emoji_id || undefined,
     });
-    rowsMap.get(rowKey).push(cell);
+    rowsMap.get(rowKey).push({ cell, sort: b.sort_order ?? 0 });
   }
 
   const rows = [...rowsMap.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([, cells]) => cells);
+    .map(([, cells]) =>
+      cells.sort((a, b) => a.sort - b.sort).map((x) => x.cell),
+    );
 
   if (settings.websiteUrl && !siteBtn) {
     const insertAt = Math.min(3, rows.length);
@@ -41,8 +65,13 @@ export function inlineRootMenu(settings, botId) {
     rows.splice(insertAt, 0, siteRow);
   } else if (siteBtn?.action_value) {
     const insertAt = Math.min(3, rows.length);
+    const action = resolveActionValue(siteBtn, botId);
     rows.splice(insertAt, 0, [
-      btn(siteBtn.label, { url: siteBtn.action_value, style: siteBtn.style || "primary" }),
+      btn(siteBtn.label, {
+        ...action,
+        style: siteBtn.style || "primary",
+        icon_custom_emoji_id: siteBtn.icon_emoji_id || undefined,
+      }),
     ]);
   }
 
@@ -79,35 +108,39 @@ export function inlineEscortMenu(botId) {
   return { inline_keyboard: rows };
 }
 
-export function inlineProductList(botId, items, backCallback = "menu_root") {
-  const rows = items.map(([productId, label]) => {
-    const product = getProduct(botId, productId);
-    let style = "primary";
-    if (product && ["primary", "success", "danger"].includes(product.button_style)) {
-      style = product.button_style;
-    }
-    return [btn(label, { callback_data: `pick_${productId}`, style })];
-  });
-  rows.push([btn("◀️ В главное меню", { callback_data: backCallback, style: "danger" })]);
+export function inlineProductList(botId, category) {
+  const rows = [];
+  for (const product of listProducts(botId, { activeOnly: true, category })) {
+    const price = product.amount > 0 ? Math.trunc(product.amount) : 0;
+    const label = price
+      ? `${product.title} — ${price} ₽`
+      : `${product.title} — по запросу`;
+    const style = ["primary", "success", "danger"].includes(product.button_style)
+      ? product.button_style
+      : "primary";
+    rows.push([btn(label, { callback_data: `pick_${product.id}`, style })]);
+  }
+  rows.push([btn("◀️ В главное меню", { callback_data: "menu_root", style: "danger" })]);
   return { inline_keyboard: rows };
 }
 
-export function inlineConfirmOrder() {
+export function inlineConfirmOrder(productId, botId) {
+  const product = getProduct(botId, productId);
+  const price = product?.amount > 0 ? Math.trunc(product.amount) : 0;
+  const label = price ? `✅ Подтвердить · ${price} ₽` : "✅ Подтвердить заказ";
   return {
     inline_keyboard: [
-      [
-        btn("✅ Подтвердить", { callback_data: "order_confirm", style: "success" }),
-        btn("❌ Отмена", { callback_data: "order_cancel", style: "danger" }),
-      ],
+      [btn(label, { callback_data: `confirm_${productId}`, style: "success" })],
+      [btn("◀️ Назад", { callback_data: "menu_root", style: "danger" })],
     ],
   };
 }
 
-export function inlinePaycore(checkoutUrl) {
-  return {
-    inline_keyboard: [
-      [btn("💳 Оплатить через PayCore", { url: checkoutUrl, style: "primary" })],
-      [btn("◀️ В главное меню", { callback_data: "menu_root", style: "danger" })],
-    ],
-  };
+export function inlinePaycore(url) {
+  return { inline_keyboard: [[btn("💳 Оплатить", { url, style: "primary" })]] };
+}
+
+export function shopDeepLink(username, productId) {
+  const u = username?.replace(/^@/, "") || "";
+  return `https://t.me/${u}?start=buy_${encodeURIComponent(productId)}`;
 }
