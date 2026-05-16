@@ -1,8 +1,10 @@
 import crypto from "crypto";
+import http from "http";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { getSettings, ROOT } from "./config.js";
+import { logPortDiagnostics, resolveListenPorts } from "./port.js";
 import {
   createProduct,
   createPromo,
@@ -162,31 +164,54 @@ export function createAdminApp() {
   });
 
   app.get("/", (req, res) => {
-    res.sendFile(path.join(WEB, "index.html"));
+    res.sendFile(path.resolve(WEB, "index.html"));
   });
 
   app.use("/static", express.static(WEB));
   return app;
 }
 
-export function startAdminServer() {
-  initDb();
-  const settings = getSettings();
-  const port = settings.resolvedAdminPort();
-  const app = createAdminApp();
+function listenOnPort(app, port) {
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, "0.0.0.0", () => {
-      const settings = getSettings();
-      const publicUrl = settings.adminPublicUrl?.replace(/\/$/, "");
-      console.log(`[metro-shop] Admin panel http://0.0.0.0:${port}`);
-      if (publicUrl) {
-        console.log(`[metro-shop] Public URL: ${publicUrl}`);
-      }
+    const server = http.createServer(app);
+    server.listen(port, "0.0.0.0", () => {
+      console.log(`[metro-shop] Admin listening on 0.0.0.0:${port}`);
       resolve(server);
     });
     server.on("error", (err) => {
-      console.error(`[metro-shop] Admin listen failed on port ${port}:`, err.message);
+      if (err.code === "EADDRINUSE") {
+        console.warn(`[metro-shop] Port ${port} busy, skipped`);
+        resolve(null);
+        return;
+      }
       reject(err);
     });
   });
+}
+
+export async function startAdminServer() {
+  initDb();
+  logPortDiagnostics();
+
+  const ports = resolveListenPorts();
+  const app = createAdminApp();
+  const servers = [];
+
+  for (const port of ports) {
+    const server = await listenOnPort(app, port);
+    if (server) servers.push(server);
+  }
+
+  if (!servers.length) {
+    throw new Error("[metro-shop] Admin: не удалось занять ни один порт");
+  }
+
+  const publicUrl = getSettings().adminPublicUrl?.replace(/\/$/, "");
+  console.log(`[metro-shop] Admin ports: ${ports.join(", ")}`);
+  if (publicUrl) {
+    console.log(`[metro-shop] Open in browser: ${publicUrl}`);
+    console.log(`[metro-shop] Health check: ${publicUrl}/health`);
+  }
+
+  return servers;
 }

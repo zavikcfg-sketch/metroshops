@@ -1,5 +1,6 @@
 {
   "language": "nodejs",
   "start_command": "sh start.sh",
-  "main": "http-wrapper.js"
+  "main": "http-wrapper.js",
+  "http_entry": "http-wrapper.js"
 }

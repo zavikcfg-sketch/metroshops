@@ -1,5 +1,6 @@
 import { startAdminServer } from "./adminServer.js";
 import { startBot } from "./bot.js";
+import { logPortDiagnostics } from "./port.js";
 import { initDb } from "./repository.js";
 
 /** Только админка (http-wrapper.js / домен Bothost). */
@@ -16,6 +17,7 @@ export async function mainBot() {
 
 /** Локально: админка + бот в одном процессе. */
 export async function main() {
+  logPortDiagnostics();
   initDb();
   await startAdminServer();
   await startBot();

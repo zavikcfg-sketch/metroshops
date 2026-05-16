@@ -12,6 +12,6 @@ RUN chmod +x start.sh && mkdir -p /app/data
 ENV NODE_ENV=production \
     DATA_DIR=/app/data
 
-EXPOSE 8080
+EXPOSE 3000 8080
 
 CMD ["sh", "start.sh"]

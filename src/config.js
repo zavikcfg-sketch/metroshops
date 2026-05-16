@@ -66,7 +66,7 @@ export function getSettings() {
       return path.isAbsolute(p) ? p : path.join(ROOT, p);
     },
     resolvedAdminPort() {
-      const port = env("PORT");
+      const port = env("PORT") || env("ADMIN_PORT");
       if (/^\d+$/.test(port)) return Number(port);
       return this.adminPort;
     },
