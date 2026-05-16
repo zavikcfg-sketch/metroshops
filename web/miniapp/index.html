@@ -2,8 +2,12 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#060a08" />
   <title>Metro Shop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="styles.css" id="shop-css" />
   <script>
@@ -11,64 +15,165 @@
       const m = location.pathname.match(/^\/b\/([^/]+)\/shop/);
       window.__SHOP_SLUG__ = m ? m[1] : "main";
       window.__SHOP_API__ = "/b/" + window.__SHOP_SLUG__ + "/shop/api";
-      if (m) {
-        document.getElementById("shop-css").href = "/b/" + m[1] + "/shop/styles.css";
-      }
+      if (m) document.getElementById("shop-css").href = "/b/" + m[1] + "/shop/styles.css";
     })();
   </script>
 </head>
 <body>
-  <div class="bg-layer" aria-hidden="true">
-    <div class="bg-glow bg-glow-a"></div>
-    <div class="bg-glow bg-glow-b"></div>
-    <div class="bg-grid"></div>
+  <div class="ambient" aria-hidden="true">
+    <div class="ambient__mesh"></div>
+    <div class="ambient__orb ambient__orb--a"></div>
+    <div class="ambient__orb ambient__orb--b"></div>
+    <div class="ambient__orb ambient__orb--c"></div>
+    <div class="ambient__scanlines"></div>
+    <div class="ambient__particles" id="particles"></div>
   </div>
 
-  <div id="app" class="shop-app">
-    <header class="shop-header">
-      <button type="button" class="pill-btn" id="btn-profile">Профиль</button>
-      <div class="hero-avatar-wrap">
-        <img src="avatar.svg" alt="" class="hero-avatar" id="shop-avatar" width="88" height="88" />
-        <span class="hero-ring"></span>
+  <div id="splash" class="splash" aria-live="polite">
+    <div class="splash__logo">
+      <img src="avatar.svg" alt="" width="72" height="72" class="splash__avatar" />
+      <div class="splash__ring"></div>
+    </div>
+    <p class="splash__title">METRO SHOP</p>
+    <div class="splash__bar"><span class="splash__bar-fill"></span></div>
+  </div>
+
+  <div id="app" class="shell hidden">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="btn-profile" aria-label="Профиль">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+        <span>Профиль</span>
+      </button>
+      <div class="topbar__status">
+        <span class="pulse-dot"></span>
+        <span id="top-status">online</span>
       </div>
-      <p class="hero-tagline" id="hero-tagline">Metro Royale · 24/7</p>
     </header>
 
-    <div class="hero-banner glass" id="hero-banner">
-      <div class="hero-banner-text">
-        <h1>ТОВАРЫ<br /><span class="accent">METRO</span></h1>
-        <p class="hero-sub">Сопровождение · буст · снаряжение</p>
+    <main class="main-scroll" id="main-scroll">
+      <section class="hero reveal">
+        <div class="hero__avatar-block">
+          <div class="hero__avatar-glow"></div>
+          <img src="avatar.svg" alt="" class="hero__avatar" id="shop-avatar" width="96" height="96" />
+        </div>
+        <p class="hero__brand" id="hero-brand">Metro Shop</p>
+        <p class="hero__tag" id="hero-tagline">PUBG Mobile · Metro Royale</p>
+
+        <div class="hero-card">
+          <img src="hero-art.svg" alt="" class="hero-card__art" />
+          <div class="hero-card__content">
+            <span class="hero-card__label">Каталог услуг</span>
+            <h1 class="hero-card__title">ТОВАРЫ <span class="gradient-text">METRO</span></h1>
+            <p class="hero-card__sub">Сопровождение · буст · снаряжение под ключ</p>
+            <button type="button" class="hero-card__cta" id="banner-cta">
+              <span>Смотреть каталог</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="chips reveal reveal-d1">
+          <span class="chip"><span class="chip__ico">⚡</span> 24/7</span>
+          <span class="chip"><span class="chip__ico">💳</span> PayCore</span>
+          <span class="chip"><span class="chip__ico">🛡️</span> Гарантия</span>
+        </div>
+      </section>
+
+      <section class="block reveal reveal-d2">
+        <div class="block__head">
+          <h2 class="block__title">Категории</h2>
+          <span class="block__hint">выберите раздел</span>
+        </div>
+        <div class="cat-grid" id="cat-grid"></div>
+      </section>
+
+      <section class="block reveal reveal-d3">
+        <div class="block__head">
+          <h2 class="block__title" id="products-label">Популярное</h2>
+          <button type="button" class="text-link" id="btn-all-products">Все →</button>
+        </div>
+        <div class="product-rail" id="product-grid"></div>
+      </section>
+
+      <footer class="footer-links reveal">
+        <a href="#" id="link-reviews" class="footer-card">
+          <span class="footer-card__ico">📢</span>
+          <span>Отзывы</span>
+        </a>
+        <a href="#" id="link-support" class="footer-card">
+          <span class="footer-card__ico">💬</span>
+          <span>Поддержка</span>
+        </a>
+        <a href="#" id="link-channel" class="footer-card">
+          <span class="footer-card__ico">📣</span>
+          <span>Канал</span>
+        </a>
+      </footer>
+    </main>
+
+    <nav class="dock" aria-label="Навигация">
+      <button type="button" class="dock__item dock__item--active" data-nav="home">
+        <span class="dock__ico">🏠</span>
+        <span>Главная</span>
+      </button>
+      <button type="button" class="dock__item" data-nav="catalog">
+        <span class="dock__ico">🛒</span>
+        <span>Каталог</span>
+      </button>
+      <button type="button" class="dock__item" data-nav="reviews">
+        <span class="dock__ico">⭐</span>
+        <span>Отзывы</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="view-catalog" class="view-layer hidden" aria-hidden="true">
+    <header class="view-head">
+      <button type="button" class="icon-btn icon-btn--round" data-back aria-label="Назад">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div>
+        <p class="view-head__eyebrow">Каталог</p>
+        <h2 class="view-head__title" id="cat-title">Раздел</h2>
       </div>
-      <button type="button" class="banner-cta" id="banner-cta">Перейти</button>
-    </div>
-
-    <p class="section-label">КАТЕГОРИИ</p>
-    <div class="cat-grid" id="cat-grid"></div>
-
-    <p class="section-label" id="products-label">ПОПУЛЯРНОЕ</p>
-    <div class="product-grid" id="product-grid"></div>
-
-    <div class="shop-footer glass">
-      <a href="#" id="link-reviews" class="footer-link">📢 Отзывы</a>
-      <a href="#" id="link-support" class="footer-link">💬 Поддержка</a>
-    </div>
-  </div>
-
-  <div id="view-category" class="shop-view hidden">
-    <header class="sub-header">
-      <button type="button" class="back-btn" data-back>←</button>
-      <h2 id="cat-title">Категория</h2>
     </header>
-    <div class="product-grid" id="cat-products"></div>
+    <div class="product-list" id="cat-products"></div>
   </div>
 
-  <div id="loader" class="loader">Загрузка…</div>
+  <div id="view-all" class="view-layer hidden" aria-hidden="true">
+    <header class="view-head">
+      <button type="button" class="icon-btn icon-btn--round" data-back-all aria-label="Назад">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div>
+        <p class="view-head__eyebrow">Все товары</p>
+        <h2 class="view-head__title">Каталог</h2>
+      </div>
+    </header>
+    <div class="filter-tabs" id="filter-tabs"></div>
+    <div class="product-list" id="all-products"></div>
+  </div>
+
+  <div id="sheet-backdrop" class="sheet-backdrop hidden"></div>
+  <aside id="product-sheet" class="sheet hidden" role="dialog" aria-modal="true">
+    <div class="sheet__handle"></div>
+    <div class="sheet__hero" id="sheet-hero">
+      <span class="sheet__cat" id="sheet-cat"></span>
+      <h3 class="sheet__name" id="sheet-name"></h3>
+      <p class="sheet__price" id="sheet-price"></p>
+    </div>
+    <p class="sheet__desc" id="sheet-desc"></p>
+    <ul class="sheet__perks">
+      <li>✓ Оплата через PayCore</li>
+      <li>✓ Поддержка после заказа</li>
+      <li>✓ Быстрая выдача в игре</li>
+    </ul>
+    <button type="button" class="sheet__buy" id="sheet-buy">Купить в боте</button>
+  </aside>
 
   <script src="app.js" id="shop-js"></script>
   <script>
-    if (window.__SHOP_SLUG__) {
-      document.getElementById("shop-js").src = "/b/" + window.__SHOP_SLUG__ + "/shop/app.js";
-    }
+    if (window.__SHOP_SLUG__) document.getElementById("shop-js").src = "/b/" + window.__SHOP_SLUG__ + "/shop/app.js";
   </script>
 </body>
 </html>
