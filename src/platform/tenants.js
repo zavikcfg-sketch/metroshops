@@ -171,10 +171,14 @@ export function listActiveTenants() {
 }
 
 export function createTenant({ token, displayName, adminPassword, avatarPath = null }) {
+  const password = String(adminPassword ?? "").trim();
+  if (password.length < 4) {
+    throw new Error("Укажите пароль админки (минимум 4 символа)");
+  }
+
   const conn = connect();
   const id = crypto.randomUUID();
   const slug = makeSlug(displayName);
-  const password = adminPassword?.trim() || generatePassword();
   const defs = defaultTenantSettings(displayName);
 
   conn
@@ -234,6 +238,12 @@ export function updateTenant(id, data) {
     .prepare(`UPDATE tenant_bots SET ${fields.join(", ")} WHERE id = ?`)
     .run(...values);
   return getTenantById(id);
+}
+
+export function setTenantActive(id, active) {
+  connect()
+    .prepare("UPDATE tenant_bots SET active = ? WHERE id = ?")
+    .run(active ? 1 : 0, id);
 }
 
 export function deleteTenant(id) {

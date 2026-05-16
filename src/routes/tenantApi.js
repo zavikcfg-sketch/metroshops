@@ -18,6 +18,12 @@ import {
   tenantSettings,
   upsertMenuButton,
 } from "../platform/tenants.js";
+import {
+  getBotStatus,
+  restartTenantBot,
+  startTenantBot,
+  stopTenantBot,
+} from "../botManager.js";
 
 export function mountTenantApi(router, { checkTenantAuth }) {
   router.post("/auth/login", (req, res) => {
@@ -142,6 +148,28 @@ export function mountTenantApi(router, { checkTenantAuth }) {
       enabled: body.enabled !== false,
     });
     res.json({ ok: true });
+  });
+
+  router.get("/bot/status", checkTenantAuth, async (req, res) => {
+    const st = await getBotStatus(req.tenant.id);
+    res.json(st);
+  });
+
+  router.post("/bot/start", checkTenantAuth, async (req, res) => {
+    const result = await startTenantBot(req.tenant);
+    if (!result.ok) return res.status(400).json({ detail: result.error });
+    res.json(result);
+  });
+
+  router.post("/bot/stop", checkTenantAuth, async (req, res) => {
+    const result = await stopTenantBot(req.tenant.id);
+    res.json(result);
+  });
+
+  router.post("/bot/restart", checkTenantAuth, async (req, res) => {
+    const result = await restartTenantBot(req.tenant.id);
+    if (!result.ok) return res.status(400).json({ detail: result.error });
+    res.json(result);
   });
 }
 

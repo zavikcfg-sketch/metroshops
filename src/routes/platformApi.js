@@ -10,7 +10,13 @@ import {
   tenantAvatarsDir,
   updateTenant,
 } from "../platform/tenants.js";
-import { applyBotProfile, restartTenantBot, startTenantBot, stopTenantBot } from "../botManager.js";
+import {
+  applyBotProfile,
+  getBotStatus,
+  restartTenantBot,
+  startTenantBot,
+  stopTenantBot,
+} from "../botManager.js";
 
 function safeEqual(a, b) {
   const ba = Buffer.from(String(a));
@@ -42,17 +48,25 @@ export function mountPlatformApi(router) {
     return res.json({ token: secret, role: "platform" });
   });
 
-  router.get("/bots", checkSuperAuth, (req, res) => {
+  router.get("/bots", checkSuperAuth, async (req, res) => {
     const base = `${req.protocol}://${req.get("host")}`;
-    const items = listTenants().map((t) => ({
-      id: t.id,
-      slug: t.slug,
-      display_name: t.display_name,
-      shop_name: t.shop_name,
-      active: t.active,
-      created_at: t.created_at,
-      admin_url: `${base}/b/${t.slug}/`,
-    }));
+    const items = await Promise.all(
+      listTenants().map(async (t) => {
+        const st = await getBotStatus(t.id);
+        return {
+          id: t.id,
+          slug: t.slug,
+          display_name: t.display_name,
+          shop_name: t.shop_name,
+          active: t.active,
+          running: st.running,
+          username: st.username,
+          created_at: t.created_at,
+          admin_url: `${base}/b/${t.slug}/`,
+          admin_password: t.admin_password,
+        };
+      }),
+    );
     res.json({ items });
   });
 
@@ -63,6 +77,9 @@ export function mountPlatformApi(router) {
 
     if (!token || !displayName) {
       return res.status(400).json({ detail: "Нужны token и display_name" });
+    }
+    if (adminPassword.length < 4) {
+      return res.status(400).json({ detail: "Укажите пароль админки (минимум 4 символа)" });
     }
 
     try {
@@ -84,7 +101,7 @@ export function mountPlatformApi(router) {
       const { tenant, adminPassword: pwd, adminUrl } = createTenant({
         token,
         displayName,
-        adminPassword: adminPassword || undefined,
+        adminPassword,
         avatarPath,
       });
 
@@ -96,8 +113,15 @@ export function mountPlatformApi(router) {
         tenant.avatar_path = finalPath;
       }
 
-      await applyBotProfile(tenant, tenant.avatar_path);
-      await startTenantBot(getTenantById(tenant.id));
+      await applyBotProfile(getTenantById(tenant.id), tenant.avatar_path);
+
+      const startResult = await startTenantBot(getTenantById(tenant.id));
+      if (!startResult.ok) {
+        return res.status(400).json({
+          detail: `Бот создан, но не запустился в Telegram: ${startResult.error}`,
+          admin_password: pwd,
+        });
+      }
 
       const base = `${req.protocol}://${req.get("host")}`;
       res.json({
@@ -106,7 +130,8 @@ export function mountPlatformApi(router) {
           id: tenant.id,
           slug: tenant.slug,
           display_name: tenant.display_name,
-          username: me.username,
+          username: startResult.username || me.username,
+          running: true,
         },
         admin_url: `${base}${adminUrl}`,
         admin_password: pwd,
@@ -118,6 +143,9 @@ export function mountPlatformApi(router) {
   });
 
   router.delete("/bots/:id", checkSuperAuth, async (req, res) => {
+    if (req.params.id === "main") {
+      return res.status(400).json({ detail: "Нельзя удалить основной бот (main)" });
+    }
     await stopTenantBot(req.params.id);
     if (!deleteTenant(req.params.id)) {
       return res.status(404).json({ detail: "Не найден" });
@@ -126,7 +154,21 @@ export function mountPlatformApi(router) {
   });
 
   router.post("/bots/:id/restart", checkSuperAuth, async (req, res) => {
-    await restartTenantBot(req.params.id);
-    res.json({ ok: true });
+    const result = await restartTenantBot(req.params.id);
+    if (!result.ok) return res.status(400).json({ detail: result.error });
+    res.json(result);
+  });
+
+  router.post("/bots/:id/start", checkSuperAuth, async (req, res) => {
+    const tenant = getTenantById(req.params.id);
+    if (!tenant) return res.status(404).json({ detail: "Не найден" });
+    const result = await startTenantBot(tenant);
+    if (!result.ok) return res.status(400).json({ detail: result.error });
+    res.json(result);
+  });
+
+  router.post("/bots/:id/stop", checkSuperAuth, async (req, res) => {
+    const result = await stopTenantBot(req.params.id);
+    res.json(result);
   });
 }

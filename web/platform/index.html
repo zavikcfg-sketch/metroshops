@@ -39,7 +39,7 @@
       <form id="create-bot-form" class="create-form">
         <input name="token" required placeholder="Токен бота" />
         <input name="display_name" required placeholder="Название магазина" />
-        <input name="admin_password" placeholder="Пароль админки (пусто = авто)" />
+        <input name="admin_password" required minlength="4" placeholder="Пароль админки клиента (обязательно)" />
         <input type="file" name="avatar" accept="image/*" />
         <button type="submit" class="btn btn-primary">Создать бота</button>
       </form>

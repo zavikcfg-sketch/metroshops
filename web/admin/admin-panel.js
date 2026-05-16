@@ -22,7 +22,8 @@ document.addEventListener("DOMContentLoaded", () => {
     async function api(path, opts = {}) {
       const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
       if (token()) headers.Authorization = `Bearer ${token()}`;
-      const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+      const p = path.startsWith("/api/") ? path.slice(4) : path;
+      const url = path.startsWith("http") ? path : `${API_BASE}${p}`;
       const res = await fetch(url, { ...opts, headers });
       if (res.status === 401) {
         logout();
@@ -43,6 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (page) page.classList.remove("hidden");
       if (link) link.classList.add("active");
       if (name === "buttons") loadButtons();
+      if (name === "bots") loadBotControl();
       if (name === "products") loadProducts();
       if (name === "promos") loadPromos();
       if (name === "invoices") loadOrders();
@@ -51,6 +53,39 @@ document.addEventListener("DOMContentLoaded", () => {
       if (name === "stats" || name === "home") loadStats();
       if (name === "wallet") {
         $("#wallet-date").textContent = new Date().toLocaleString("ru-RU");
+      }
+    }
+
+    async function loadBotControl() {
+      const st = await api("/bot/status");
+      $("#bot-title").textContent = st.display_name || "Мой бот";
+      $("#bot-username").textContent = st.username ? `@${st.username}` : "—";
+      const statusEl = $("#bot-status-text");
+      const msg = $("#bot-control-msg");
+      if (st.running) {
+        statusEl.innerHTML = '<span class="badge badge-green">Работает в Telegram</span>';
+      } else {
+        statusEl.innerHTML = '<span class="badge">Остановлен</span>';
+      }
+      msg.textContent = st.telegram_ok
+        ? "Управление polling на сервере."
+        : "Проверьте токен бота у главного админа.";
+    }
+
+    async function botControl(action) {
+      const msg = $("#bot-control-msg");
+      msg.textContent = "Выполняется…";
+      try {
+        const data = await api(`/bot/${action}`, { method: "POST" });
+        msg.textContent =
+          action === "start"
+            ? `Запущен @${data.username || "бот"}`
+            : action === "stop"
+              ? "Бот остановлен"
+              : "Перезапуск выполнен";
+        await loadBotControl();
+      } catch (e) {
+        msg.textContent = e.message;
       }
     }
 
@@ -288,6 +323,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       $("#logout-btn").onclick = logout;
       $("#add-product-btn").onclick = () => openProductModal();
+      $("#bot-btn-start").onclick = () => botControl("start");
+      $("#bot-btn-stop").onclick = () => botControl("stop");
+      $("#bot-btn-restart").onclick = () => botControl("restart");
       $("#refresh-buttons").onclick = loadButtons;
       $("#refresh-products").onclick = loadProducts;
       $("#refresh-orders").onclick = loadOrders;
