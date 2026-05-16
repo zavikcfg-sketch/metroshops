@@ -111,6 +111,11 @@
       </footer>
     </main>
 
+    <button type="button" class="cart-fab" id="cart-fab" aria-label="Корзина">
+      <span>🛒</span>
+      <span class="cart-fab__count" id="cart-count">0</span>
+    </button>
+
     <nav class="dock" aria-label="Навигация">
       <button type="button" class="dock__item dock__item--active" data-nav="home">
         <span class="dock__ico">🏠</span>
@@ -155,6 +160,16 @@
   </div>
 
   <div id="sheet-backdrop" class="sheet-backdrop hidden"></div>
+  <aside id="cart-sheet" class="sheet hidden" role="dialog" aria-modal="true">
+    <div class="sheet__handle"></div>
+    <h3 class="sheet__name">Корзина</h3>
+    <div id="cart-items" class="cart-items"></div>
+    <label class="sheet-field">Player ID<input id="cart-pubg-id" inputmode="numeric" placeholder="1234567890" /></label>
+    <label class="sheet-field">Промокод<input id="cart-promo" placeholder="SUMMER" /></label>
+    <p class="sheet__price" id="cart-total">0 ₽</p>
+    <button type="button" class="sheet__buy" id="cart-checkout">Оформить в боте</button>
+  </aside>
+
   <aside id="product-sheet" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheet__handle"></div>
     <div class="sheet__hero" id="sheet-hero">

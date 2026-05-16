@@ -20,7 +20,51 @@
     shopName: "Metro Shop",
     activeProduct: null,
     filterCat: "all",
+    cart: [],
+    branding: {},
   };
+
+  function initDataHeader() {
+    return tg?.initData ? { "X-Telegram-Init-Data": tg.initData } : {};
+  }
+
+  function addToCart(p) {
+    const ex = state.cart.find((x) => x.product_id === p.id);
+    if (ex) ex.qty += 1;
+    else state.cart.push({ product_id: p.id, title: p.title, amount: p.amount, qty: 1 });
+    updateCartUi();
+    haptic("light");
+  }
+
+  function updateCartUi() {
+    const n = state.cart.reduce((s, x) => s + x.qty, 0);
+    $("#cart-count").textContent = String(n);
+    const total = state.cart.reduce((s, x) => s + (x.amount > 0 ? x.amount * x.qty : 0), 0);
+    $("#cart-total").textContent = fmtPrice(total);
+    const box = $("#cart-items");
+    box.innerHTML = state.cart
+      .map(
+        (x) =>
+          `<div class="cart-line"><span>${escapeHtml(x.title)} ×${x.qty}</span><span>${fmtPrice(x.amount * x.qty)}</span></div>`,
+      )
+      .join("");
+  }
+
+  function openCartSheet() {
+    updateCartUi();
+    $("#sheet-backdrop").classList.remove("hidden");
+    $("#cart-sheet").classList.remove("hidden");
+    requestAnimationFrame(() => {
+      $("#sheet-backdrop").classList.add("visible");
+      $("#cart-sheet").classList.add("open");
+    });
+  }
+
+  function closeCartSheet() {
+    $("#cart-sheet").classList.remove("open");
+    $("#sheet-backdrop").classList.remove("visible");
+    setTimeout(() => $("#cart-sheet").classList.add("hidden"), 350);
+  }
 
   function haptic(type = "light") {
     try {
@@ -95,12 +139,26 @@
         <p class="product-card__meta">${escapeHtml(vis.label)}</p>
         <p class="product-card__price">${fmtPrice(p.amount)}</p>
       </div>
-      <button type="button" class="product-card__buy">Купить</button>
+      <button type="button" class="product-card__buy" data-act="buy">Купить</button>
     `;
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "product-card__buy";
+    addBtn.style.marginTop = "4px";
+    addBtn.style.background = "rgba(255,255,255,0.15)";
+    addBtn.style.color = "#fff";
+    addBtn.textContent = "+ В корзину";
+    addBtn.onclick = (e) => {
+      e.stopPropagation();
+      addToCart(p);
+    };
+    card.appendChild(addBtn);
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".product-card__buy")) {
+      if (e.target.closest('[data-act="buy"]')) {
         e.stopPropagation();
         purchase(p);
+      } else if (e.target.closest(".product-card__buy")) {
+        return;
       } else {
         openSheet(p);
       }
@@ -277,6 +335,19 @@
     state.reviewsUrl = data.reviews_url || "#";
     state.metroUrl = data.metro_shop_url || "#";
     state.shopName = data.shop_name || "Metro Shop";
+    state.branding = data;
+    if (data.theme_accent) document.documentElement.style.setProperty("--accent", data.theme_accent);
+    if (data.theme_bg) {
+      document.documentElement.style.setProperty("--bg", data.theme_bg);
+      document.body.style.background = data.theme_bg;
+    }
+    if (data.logo_url) $("#shop-avatar").src = data.logo_url;
+    if (data.promo?.title) {
+      const banner = document.createElement("div");
+      banner.className = "promo-banner";
+      banner.textContent = data.promo.title;
+      $("#main-scroll")?.prepend(banner);
+    }
 
     $("#hero-brand").textContent = state.shopName;
     $("#hero-tagline").textContent = data.display_name || "PUBG Mobile · Metro Royale";
@@ -345,7 +416,50 @@
       if (state.activeProduct) purchase(state.activeProduct);
     };
 
-    $("#sheet-backdrop").onclick = closeSheet;
+    $("#sheet-backdrop").onclick = () => {
+      closeSheet();
+      closeCartSheet();
+    };
+
+    $("#cart-fab").onclick = () => {
+      haptic("light");
+      openCartSheet();
+    };
+
+    $("#cart-checkout").onclick = async () => {
+      if (!state.cart.length) {
+        tg?.showAlert?.("Корзина пуста");
+        return;
+      }
+      const pubgId = $("#cart-pubg-id").value.trim();
+      if (!/^\d{5,}$/.test(pubgId)) {
+        tg?.showAlert?.("Укажите Player ID (цифры)");
+        return;
+      }
+      haptic("medium");
+      try {
+        const res = await fetch(`${API}/cart/checkout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...initDataHeader() },
+          body: JSON.stringify({
+            items: state.cart,
+            pubg_id: pubgId,
+            promo_code: $("#cart-promo").value.trim() || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Ошибка оформления");
+        state.cart = [];
+        updateCartUi();
+        closeCartSheet();
+        if (data.paycore_url && tg?.openLink) tg.openLink(data.paycore_url);
+        else if (data.paycore_url) window.open(data.paycore_url, "_blank");
+        tg?.showAlert?.(`Заказ ${data.order_id} создан!`);
+        setTimeout(() => tg?.close?.(), 500);
+      } catch (e) {
+        tg?.showAlert?.(e.message);
+      }
+    };
 
     let startY = 0;
     const sheet = $("#product-sheet");

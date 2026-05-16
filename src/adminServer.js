@@ -61,8 +61,12 @@ export function createAdminApp() {
   app.get("/", (req, res) => res.redirect("/platform"));
   app.use("/static", express.static(WEB));
 
+  const dataDir = getSettings().dataDir();
+  app.use("/files", express.static(dataDir));
+
   return app;
 }
+
 
 function listenOnPort(app, port) {
   return new Promise((resolve, reject) => {

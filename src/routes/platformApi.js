@@ -17,6 +17,7 @@ import {
   startTenantBot,
   stopTenantBot,
 } from "../botManager.js";
+import { listPlans } from "../services/plans.js";
 
 function safeEqual(a, b) {
   const ba = Buffer.from(String(a));
@@ -46,6 +47,10 @@ export function mountPlatformApi(router) {
       return res.status(401).json({ detail: "Неверный пароль" });
     }
     return res.json({ token: secret, role: "platform" });
+  });
+
+  router.get("/plans", checkSuperAuth, (req, res) => {
+    res.json({ items: listPlans() });
   });
 
   router.get("/bots", checkSuperAuth, async (req, res) => {

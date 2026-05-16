@@ -50,7 +50,9 @@
         <a href="#markups" data-page="markups" class="nav-link">Наценки</a>
         <a href="#wallet" data-page="wallet" class="nav-link">Кошелёк</a>
         <a href="#promos" data-page="promos" class="nav-link">Промокоды</a>
-        <a href="#invoices" data-page="invoices" class="nav-link">Инвойсы</a>
+        <a href="#invoices" data-page="invoices" class="nav-link">Заказы</a>
+        <a href="#branding" data-page="branding" class="nav-link">Брендинг</a>
+        <a href="#broadcast" data-page="broadcast" class="nav-link">Рассылка</a>
         <a href="#stats" data-page="stats" class="nav-link">Статистика</a>
         <a href="#users" data-page="users" class="nav-link">Пользователи</a>
         <a href="#help" data-page="help" class="nav-link">Помощь</a>
@@ -74,6 +76,35 @@
           </div>
         </div>
         <div class="stats-grid" id="home-stats"></div>
+        <div class="card" id="onboarding-card" style="margin-top:1rem"></div>
+      </section>
+
+      <section id="page-branding" class="page hidden">
+        <h1>Брендинг · Mini App</h1>
+        <div class="card">
+          <form id="branding-form" class="modal-body" style="max-width:520px">
+            <label>Название магазина<input name="shop_name" /></label>
+            <label>Цвет акцента<input name="theme_accent" type="color" value="#b8ff5c" /></label>
+            <label>Фон Mini App<input name="theme_bg" type="color" value="#050807" /></label>
+            <label>Заголовок акции<input name="promo_title" placeholder="-15% до воскресенья" /></label>
+            <label>Акция до<input name="promo_ends_at" type="datetime-local" /></label>
+            <label>Chat ID для уведомлений (через запятую)<input name="notify_chat_ids" placeholder="123456789" /></label>
+            <label>Логотип (base64 или файл)<input name="logo_file" type="file" accept="image/*" /></label>
+            <label>Баннер бота<input name="banner_file" type="file" accept="image/*" /></label>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="page-broadcast" class="page hidden">
+        <h1>Рассылка</h1>
+        <div class="card">
+          <form id="broadcast-form">
+            <label>HTML-сообщение<textarea name="message" rows="6" placeholder="<b>Акция!</b> Скидка 10%"></textarea></label>
+            <button type="submit" class="btn btn-primary">Отправить всем пользователям</button>
+            <p id="broadcast-result" class="muted"></p>
+          </form>
+        </div>
       </section>
 
       <section id="page-bots" class="page hidden">
@@ -212,8 +243,11 @@
 
       <section id="page-invoices" class="page hidden">
         <div class="page-head">
-          <h1>Инвойсы</h1>
-          <button id="refresh-orders" class="btn btn-ghost">Обновить</button>
+          <h1>Заказы</h1>
+          <div>
+            <a id="export-orders" class="btn btn-ghost" href="#" download>CSV</a>
+            <button id="refresh-orders" class="btn btn-ghost">Обновить</button>
+          </div>
         </div>
         <div class="card">
           <table class="table">

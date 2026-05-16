@@ -50,7 +50,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (name === "invoices") loadOrders();
       if (name === "users") loadUsers();
       if (name === "markups") loadCategories();
-      if (name === "stats" || name === "home") loadStats();
+      if (name === "stats" || name === "home") {
+        loadStats();
+        loadOnboarding();
+      }
+      if (name === "branding") loadBranding();
+      if (name === "broadcast") {
+        $("#broadcast-result").textContent = "";
+      }
       if (name === "wallet") {
         $("#wallet-date").textContent = new Date().toLocaleString("ru-RU");
       }
@@ -398,21 +405,79 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
+    let orderStatuses = {};
+
     async function loadOrders() {
-      const { items } = await api("/api/orders");
+      const { items, statuses } = await api("/orders");
+      orderStatuses = statuses || {};
       $("#orders-tbody").innerHTML = items
         .map(
           (o) => `
-        <tr>
+        <tr data-order="${escapeHtml(o.id)}">
           <td>${o.id}</td>
           <td>${o.created_at?.slice(0, 16).replace("T", " ") || ""}</td>
-          <td>${escapeHtml(o.product_title)}</td>
+          <td>${escapeHtml(o.product_title)}<br><small class="muted">${o.source || ""}</small></td>
           <td>${o.amount} ${o.currency}</td>
           <td><code>${o.pubg_id || "—"}</code></td>
-          <td>${o.status}</td>
+          <td>
+            <select class="order-status-select" data-id="${escapeHtml(o.id)}">
+              ${Object.keys(orderStatuses)
+                .map(
+                  (k) =>
+                    `<option value="${k}" ${k === o.status ? "selected" : ""}>${orderStatuses[k] || k}</option>`,
+                )
+                .join("")}
+            </select>
+          </td>
         </tr>`,
         )
         .join("");
+      $("#orders-tbody").querySelectorAll(".order-status-select").forEach((sel) => {
+        sel.onchange = async () => {
+          await api(`/orders/${sel.dataset.id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: sel.value }),
+          });
+        };
+      });
+    }
+
+    async function loadOnboarding() {
+      const { steps } = await api("/onboarding");
+      const el = $("#onboarding-card");
+      if (!el) return;
+      el.innerHTML =
+        `<h3>Чеклист запуска</h3><ul class="onboarding-list">` +
+        steps
+          .map(
+            (s) =>
+              `<li class="${s.done ? "done" : ""}">${s.done ? "✅" : "⬜"} ${escapeHtml(s.label)}${
+                s.url ? ` — <a href="${s.url}" target="_blank">открыть</a>` : ""
+              }</li>`,
+          )
+          .join("") +
+        `</ul>`;
+    }
+
+    async function loadBranding() {
+      const b = await api("/branding");
+      const f = $("#branding-form");
+      if (!f) return;
+      f.shop_name.value = b.shop_name || "";
+      f.theme_accent.value = b.theme_accent || "#b8ff5c";
+      f.theme_bg.value = b.theme_bg || "#050807";
+      f.promo_title.value = b.promo_title || "";
+      f.promo_ends_at.value = b.promo_ends_at ? b.promo_ends_at.slice(0, 16) : "";
+      f.notify_chat_ids.value = b.notify_chat_ids || "";
+    }
+
+    async function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
     }
 
     async function loadUsers() {
@@ -497,6 +562,58 @@ document.addEventListener("DOMContentLoaded", () => {
       };
       $("#refresh-products").onclick = loadProducts;
       $("#refresh-orders").onclick = loadOrders;
+      $("#export-orders")?.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const res = await fetch(`${API_BASE}/orders/export.csv`, {
+          headers: { Authorization: `Bearer ${token()}` },
+        });
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "orders.csv";
+        a.click();
+      });
+
+      $("#branding-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        await api("/branding", {
+          method: "PATCH",
+          body: JSON.stringify({
+            shop_name: fd.get("shop_name"),
+            theme_accent: fd.get("theme_accent"),
+            theme_bg: fd.get("theme_bg"),
+            promo_title: fd.get("promo_title"),
+            promo_ends_at: fd.get("promo_ends_at")
+              ? new Date(fd.get("promo_ends_at")).toISOString()
+              : null,
+            notify_chat_ids: fd.get("notify_chat_ids"),
+          }),
+        });
+        const logo = fd.get("logo_file");
+        if (logo?.size) {
+          await api("/branding/upload", {
+            method: "POST",
+            body: JSON.stringify({ kind: "logo", image_base64: await fileToBase64(logo) }),
+          });
+        }
+        const banner = fd.get("banner_file");
+        if (banner?.size) {
+          await api("/branding/upload", {
+            method: "POST",
+            body: JSON.stringify({ kind: "banner", image_base64: await fileToBase64(banner) }),
+          });
+        }
+        alert("Сохранено");
+      });
+
+      $("#broadcast-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const msg = new FormData(e.target).get("message");
+        const r = await api("/broadcast", { method: "POST", body: JSON.stringify({ message: msg }) });
+        $("#broadcast-result").textContent = `Отправлено: ${r.sent} · ошибок: ${r.fail}`;
+      });
       $("#add-promo-btn").onclick = () => $("#promo-modal").showModal();
 
       $("#promo-form").onsubmit = async (e) => {

@@ -387,6 +387,20 @@ code { background: var(--panel2); padding: 2px 6px; border-radius: 4px; }
 }
 .menu-btn-modal { max-width: 480px; }
 
+.onboarding-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.onboarding-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.onboarding-list li.done {
+  color: var(--green);
+}
+
 @media (max-width: 900px) {
   .app { flex-direction: column; }
   .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }

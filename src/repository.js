@@ -3,7 +3,9 @@ import fs from "fs";
 import path from "path";
 import { getSettings } from "./config.js";
 import { CATEGORIES } from "./catalog.js";
-import { initPlatformSchema } from "./platform/tenants.js";
+import { initPlatformSchema, getTenantById } from "./platform/tenants.js";
+import { runMigrations } from "./db/migrations.js";
+import { assertCanAddProduct } from "./services/plans.js";
 
 let db;
 
@@ -109,6 +111,7 @@ export function initDb() {
     );
   `);
   initPlatformSchema();
+  runMigrations();
 }
 
 export function listProducts(botId, { activeOnly = false, category = null } = {}) {
@@ -162,6 +165,8 @@ export function listPopularProducts(botId) {
 }
 
 export function createProduct(botId, data) {
+  const t = getTenantById(botId);
+  if (t) assertCanAddProduct(botId, t.plan_id);
   let pid = data.id || slug(data.title);
   const conn = connect();
   if (conn.prepare("SELECT 1 FROM products WHERE bot_id = ? AND id = ?").get(botId, pid)) {
@@ -298,7 +303,7 @@ export function registerUser(botId, userId, username = null, firstName = null) {
     .run(botId, userId, username, firstName, now, now);
 }
 
-function recordOrderUser(botId, userId, username, spent) {
+export function recordOrderUser(botId, userId, username, spent) {
   const now = new Date().toISOString();
   const conn = connect();
   const row = conn

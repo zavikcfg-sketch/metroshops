@@ -15,6 +15,10 @@ export function isBotRunning(tenantId) {
   return runners.has(tenantId);
 }
 
+export function getBotRunner(tenantId) {
+  return runners.get(tenantId) || null;
+}
+
 /** Один токен Telegram = один polling. При дублях в БД оставляем main или самый старый. */
 function pickOneTenantPerToken(tenants) {
   const byToken = new Map();

@@ -108,6 +108,22 @@ export function inlineEscortMenu(botId) {
   return { inline_keyboard: rows };
 }
 
+export function inlinePopularMenu(botId) {
+  const rows = [];
+  for (const product of listProducts(botId, { activeOnly: true, popular: true })) {
+    const price = product.amount > 0 ? Math.trunc(product.amount) : 0;
+    const label = price
+      ? `${product.title} — ${price} ₽`
+      : `${product.title} — по запросу`;
+    rows.push([btn(label, { callback_data: `pick_${product.id}`, style: "primary" })]);
+  }
+  if (!rows.length) {
+    return inlineRootMenu({ reviewsUrl: REVIEWS_CHANNEL_URL }, botId);
+  }
+  rows.push([btn("◀️ В главное меню", { callback_data: "menu_root", style: "danger" })]);
+  return { inline_keyboard: rows };
+}
+
 export function inlineProductList(botId, category) {
   const rows = [];
   for (const product of listProducts(botId, { activeOnly: true, category })) {
@@ -122,6 +138,17 @@ export function inlineProductList(botId, category) {
   }
   rows.push([btn("◀️ В главное меню", { callback_data: "menu_root", style: "danger" })]);
   return { inline_keyboard: rows };
+}
+
+export function inlineOrderActions(productId) {
+  return {
+    inline_keyboard: [
+      [
+        btn("✅ Подтвердить", { callback_data: "order_confirm", style: "success" }),
+        btn("❌ Отмена", { callback_data: "order_cancel", style: "danger" }),
+      ],
+    ],
+  };
 }
 
 export function inlineConfirmOrder(productId, botId) {

@@ -3,27 +3,32 @@ import { Bot, InputFile, session } from "grammy";
 import { ESCORT_INFO_FULL, reviewsUrl } from "./catalog.js";
 import { buildEscortPickMessage } from "./customEmoji.js";
 import {
-  inlineConfirmOrder,
   inlineEscortMenu,
+  inlineOrderActions,
   inlinePaycore,
+  inlinePopularMenu,
   inlineProductList,
   inlineRootMenu,
 } from "./keyboards.js";
 import { miniAppUrlForTenant } from "./platform/tenants.js";
 import { tenantSettings } from "./platform/tenants.js";
-import {
-  createPaymentInvoice,
-  PayCoreNotConfiguredError,
-  PayCoreRequestError,
-} from "./paycore.js";
+import { createPaymentInvoice } from "./paycore.js";
 import {
   getCategoriesForBot,
   getProduct,
-  listPopularProducts,
   listRecentOrders,
   registerUser,
-  saveOrder,
 } from "./repository.js";
+import { applyPromoForUser, consumePromo, getUserActivePromo } from "./services/promoService.js";
+import { ensureUserForReferral, getReferralStats } from "./services/referralService.js";
+import {
+  formatOrderLine,
+  getOrder,
+  listUserOrders,
+  saveOrderExtended,
+  updateOrderStatus,
+} from "./services/orderService.js";
+import { notifyAdminsNewOrder, notifyUserOrderStatus, parseNotifyChatIds } from "./services/notify.js";
 
 function formatProductLine(product) {
   if (product.amount <= 0) return [product.id, `${product.title} — по запросу`];
@@ -126,8 +131,21 @@ export async function runTenantBot(tenant) {
   const rootMenu = () => inlineRootMenu(settings, botId);
 
   bot.command("start", async (ctx) => {
-    if (ctx.from) registerUser(botId, ctx.from.id, ctx.from.username, ctx.from.first_name);
     const payload = ctx.message?.text?.split(/\s+/)[1] || "";
+    if (ctx.from) {
+      let referrerId = null;
+      if (payload.startsWith("ref_")) {
+        referrerId = Number(payload.slice(4));
+        if (!Number.isFinite(referrerId)) referrerId = null;
+      }
+      ensureUserForReferral(
+        botId,
+        ctx.from.id,
+        ctx.from.username,
+        ctx.from.first_name,
+        referrerId,
+      );
+    }
     if (payload.startsWith("buy_")) {
       const productId = decodeURIComponent(payload.slice(4));
       const product = getProduct(botId, productId);
@@ -148,8 +166,10 @@ export async function runTenantBot(tenant) {
               `Введите <b>Player ID</b> PUBG Mobile.\nОтмена: /cancel`;
         await ctx.reply(text, {
           parse_mode: "HTML",
-          reply_markup: inlineConfirmOrder(product.id, botId),
+          reply_markup: inlineOrderActions(product.id),
         });
+        ctx.session.orderStep = "waiting_pubg_id";
+        ctx.session.productId = product.id;
         return;
       }
     }
@@ -171,13 +191,38 @@ export async function runTenantBot(tenant) {
   bot.command("promo", async (ctx) => {
     const parts = ctx.message?.text?.split(/\s+/) ?? [];
     const code = parts[1]?.trim() ?? "";
-    if (!code) {
+    if (!code || !ctx.from) {
       await ctx.reply("Укажите код: /promo SUMMER2026");
       return;
     }
-    await ctx.reply(`Промокод <code>${code}</code> принят.`, {
+    const r = applyPromoForUser(botId, ctx.from.id, code);
+    if (!r.ok) {
+      await ctx.reply(`❌ ${r.error}`, { reply_markup: rootMenu() });
+      return;
+    }
+    await ctx.reply(
+      `✅ Промокод <code>${r.code}</code> активирован!\nСкидка: <b>${r.discount_percent}%</b> на следующий заказ.`,
+      { parse_mode: "HTML", reply_markup: rootMenu() },
+    );
+  });
+
+  bot.command("myorders", async (ctx) => {
+    if (!ctx.from) return;
+    const orders = listUserOrders(botId, ctx.from.id, 10);
+    if (!orders.length) {
+      await ctx.reply("У вас пока нет заказов.", { reply_markup: rootMenu() });
+      return;
+    }
+    const lines = orders.map(formatOrderLine);
+    const rows = orders.slice(0, 5).map((o) => [
+      {
+        text: `↻ ${o.id}`,
+        callback_data: `repeat:${o.product_id}`,
+      },
+    ]);
+    await ctx.reply(`<b>Ваши заказы:</b>\n\n${lines.join("\n\n")}`, {
       parse_mode: "HTML",
-      reply_markup: rootMenu(),
+      reply_markup: { inline_keyboard: [...rows, [{ text: "◀️ Меню", callback_data: "menu_root" }]] },
     });
   });
 
@@ -217,9 +262,8 @@ export async function runTenantBot(tenant) {
   });
 
   bot.callbackQuery("menu_popular", async (ctx) => {
-    const items = listPopularProducts(botId).map(formatProductLine);
     const text = "🎖 <b>Популярное</b>\n\nВыберите товар:";
-    const markup = inlineProductList(botId, items);
+    const markup = inlinePopularMenu(botId);
     const msg = ctx.callbackQuery.message;
     if (msg?.photo?.length) {
       await ctx.editMessageCaption({ caption: text, reply_markup: markup, parse_mode: "HTML" });
@@ -235,10 +279,15 @@ export async function runTenantBot(tenant) {
       await ctx.answerCallbackQuery({ text: "У бота нет @username", show_alert: true });
       return;
     }
+    const stats = getReferralStats(botId, ctx.from.id);
     const link = `https://t.me/${me.username}?start=ref_${ctx.from.id}`;
     await editMenuMessage(
       ctx,
-      `👥 <b>Реферальная система</b>\n\n<code>${link}</code>`,
+      `👥 <b>Реферальная система</b>\n\n` +
+        `Ваша ссылка:\n<code>${link}</code>\n\n` +
+        `Приглашено: <b>${stats.count}</b>\n` +
+        `Бонусный баланс: <b>${stats.balance} ₽</b>\n` +
+        `(+${stats.bonusPerReferral} ₽ за друга)`,
       rootMenu(),
     );
     await ctx.answerCallbackQuery();
@@ -362,7 +411,7 @@ export async function runTenantBot(tenant) {
       await ctx.reply(
         `<b>Проверьте заявку</b>\n\nТовар: ${product.title}\nСумма: ${price}\n` +
           `Player ID: <code>${ctx.session.pubgId}</code>\nКомментарий: ${comment || "—"}`,
-        { parse_mode: "HTML", reply_markup: inlineConfirmOrder() },
+        { parse_mode: "HTML", reply_markup: inlineOrderActions() },
       );
       return;
     }
@@ -388,38 +437,63 @@ export async function runTenantBot(tenant) {
     const comment = ctx.session.comment || "";
     const username = ctx.from.username;
 
+    let discountPercent = 0;
+    let promoCode = getUserActivePromo(botId, ctx.from.id);
+    if (promoCode) {
+      const applied = applyPromoForUser(botId, ctx.from.id, promoCode);
+      if (applied.ok) {
+        discountPercent = applied.discount_percent;
+        promoCode = applied.code;
+      } else promoCode = null;
+    }
+
+    const baseAmount = product.amount > 0 ? product.amount : 0;
+    const finalAmount =
+      discountPercent > 0
+        ? Math.max(0, Math.round(baseAmount * (1 - discountPercent / 100) * 100) / 100)
+        : baseAmount;
+
     let paycoreUrl = null;
-    if (product.amount > 0 && settings.paycoreEnabled()) {
+    let status = "new";
+    if (finalAmount > 0 && settings.paycoreEnabled()) {
       try {
         const invoice = await createPaymentInvoice(settings, {
-          amount: product.amount,
+          amount: finalAmount,
           currency: product.currency || settings.paycoreCurrency,
           description: `${shopName}: ${product.title}`,
           referenceId: orderId,
         });
         paycoreUrl =
           invoice.hpp_url || invoice.payment_url || invoice.checkout_url || null;
+        if (paycoreUrl) status = "awaiting_payment";
       } catch (e) {
         console.warn(`[metro-shop] PayCore @${tenant.slug}:`, e.message);
       }
+    } else if (finalAmount <= 0) {
+      status = "processing";
     }
 
-    saveOrder(botId, {
+    saveOrderExtended(botId, {
       orderId,
       userId: ctx.from.id,
       username,
       productId: product.id,
       productTitle: product.title,
-      amount: product.amount,
-      currency: product.currency,
+      amount: baseAmount,
+      finalAmount,
+      currency: product.currency || "RUB",
       pubgId,
       comment: comment || null,
       paycoreUrl,
+      status,
+      promoCode,
+      discountPercent,
+      source: "bot",
     });
+    if (promoCode) consumePromo(botId, ctx.from.id, promoCode);
     clearOrder(ctx);
 
-    const price =
-      product.amount <= 0 ? "по согласованию" : `${product.amount} ${product.currency}`;
+    const price = finalAmount <= 0 ? "по согласованию" : `${finalAmount} ${product.currency}`;
     let userText =
       `✅ Заявка <b>${orderId}</b> создана!\n\n<b>Товар:</b> ${product.title}\n` +
       `<b>Сумма:</b> ${price}\n<b>Player ID:</b> <code>${pubgId}</code>\n\n`;
@@ -435,17 +509,51 @@ export async function runTenantBot(tenant) {
     }
     await ctx.answerCallbackQuery({ text: "Заявка создана" });
 
-    for (const adminId of adminIds) {
-      try {
-        await bot.api.sendMessage(
-          adminId,
-          `🆕 ${orderId} · ${tenant.display_name}\n${product.title} — ${price}`,
-          { parse_mode: "HTML" },
-        );
-      } catch {
-        /* ignore */
-      }
+    const order = getOrder(botId, orderId);
+    const notifyIds = [
+      ...adminIds,
+      ...parseNotifyChatIds(tenant.notify_chat_ids),
+    ];
+    await notifyAdminsNewOrder(bot, tenant, order, product.title, price, notifyIds);
+  });
+
+  bot.callbackQuery(/^adm\|/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id, adminIds)) {
+      await ctx.answerCallbackQuery({ text: "Нет доступа", show_alert: true });
+      return;
     }
+    const parts = ctx.callbackQuery.data.split("|");
+    const fullId = parts[1];
+    const st = parts[2];
+    if (!fullId || !st) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    updateOrderStatus(botId, fullId, st);
+    const order = getOrder(botId, fullId);
+    if (order) await notifyUserOrderStatus(bot, order.user_id, order);
+    await ctx.answerCallbackQuery({ text: "Статус обновлён" });
+    try {
+      await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  bot.callbackQuery(/^repeat:/, async (ctx) => {
+    const pid = ctx.callbackQuery.data.replace(/^repeat:/, "");
+    const product = getProduct(botId, pid);
+    await ctx.answerCallbackQuery();
+    if (!product) {
+      await ctx.reply("Товар недоступен.");
+      return;
+    }
+    ctx.session.orderStep = "waiting_pubg_id";
+    ctx.session.productId = pid;
+    await ctx.reply(
+      `↻ Повтор заказа: <b>${product.title}</b>\n\nВведите <b>Player ID</b>:`,
+      { parse_mode: "HTML" },
+    );
   });
 
   bot.catch((err) => {

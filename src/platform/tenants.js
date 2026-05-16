@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getSettings, ROOT } from "../config.js";
 import { connect } from "../repository.js";
+import { assertCanAddTenant } from "../services/plans.js";
 import {
   DEFAULT_MENU_BUTTONS,
   defaultTenantSettings,
@@ -144,6 +145,13 @@ export function rowToTenant(row) {
     support_contact: row.support_contact,
     active: !!row.active,
     created_at: row.created_at,
+    theme_accent: row.theme_accent || "#b8ff5c",
+    theme_bg: row.theme_bg || "#050807",
+    banner_path: row.banner_path || null,
+    promo_title: row.promo_title || null,
+    promo_ends_at: row.promo_ends_at || null,
+    plan_id: row.plan_id || "free",
+    notify_chat_ids: row.notify_chat_ids || "",
   };
 }
 
@@ -196,6 +204,8 @@ export function createTenant({ token, displayName, adminPassword, avatarPath = n
   if (password.length < 4) {
     throw new Error("Укажите пароль админки (минимум 4 символа)");
   }
+
+  assertCanAddTenant("free");
 
   const trimmedToken = String(token ?? "").trim();
   const dupSlug = findTenantSlugByToken(trimmedToken);
@@ -255,6 +265,13 @@ export function updateTenant(id, data) {
     website_url: "website_url",
     support_contact: "support_contact",
     avatar_path: "avatar_path",
+    banner_path: "banner_path",
+    theme_accent: "theme_accent",
+    theme_bg: "theme_bg",
+    promo_title: "promo_title",
+    promo_ends_at: "promo_ends_at",
+    plan_id: "plan_id",
+    notify_chat_ids: "notify_chat_ids",
     active: "active",
   };
   for (const [k, col] of Object.entries(map)) {
@@ -355,7 +372,11 @@ export function tenantSettings(tenant) {
     websiteUrl: tenant.website_url || "",
     supportContact: tenant.support_contact || "@your_support",
     adminPassword: tenant.admin_password,
-    bannerFile: () => path.join(ROOT, tenant.avatar_path || "assets/banner.png"),
+    bannerFile: () => {
+      if (tenant.banner_path && fs.existsSync(tenant.banner_path)) return tenant.banner_path;
+      if (tenant.avatar_path && fs.existsSync(tenant.avatar_path)) return tenant.avatar_path;
+      return path.join(ROOT, getSettings().bannerPath || "assets/banner.png");
+    },
     paycoreMode: getSettings().paycoreMode,
     paycoreApiBaseUrl: getSettings().paycoreApiBaseUrl,
     paycorePublicKey: getSettings().paycorePublicKey,

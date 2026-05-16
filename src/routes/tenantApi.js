@@ -19,14 +19,22 @@ import {
   listMenuButtons,
   miniAppUrlForTenant,
   tenantSettings,
+  updateTenant,
   upsertMenuButton,
 } from "../platform/tenants.js";
 import {
+  getBotRunner,
   getBotStatus,
   restartTenantBot,
   startTenantBot,
   stopTenantBot,
 } from "../botManager.js";
+import { updateOrderStatus, ORDER_STATUSES } from "../services/orderService.js";
+import { sendBroadcast } from "../services/broadcast.js";
+import { tenantBrandingDir } from "../services/branding.js";
+import { backupDatabase } from "../services/backup.js";
+import fs from "fs";
+import path from "path";
 
 export function mountTenantApi(router, { checkTenantAuth }) {
   router.post("/auth/login", (req, res) => {
@@ -104,13 +112,119 @@ export function mountTenantApi(router, { checkTenantAuth }) {
       user_id: o.user_id,
       username: o.username,
       product_title: o.product_title,
-      amount: o.amount,
+      amount: o.final_amount ?? o.amount,
       currency: o.currency,
       pubg_id: o.pubg_id,
       status: o.status,
+      status_label: ORDER_STATUSES[o.status] || o.status,
+      promo_code: o.promo_code,
+      source: o.source,
       created_at: o.created_at,
     }));
-    res.json({ items });
+    res.json({ items, statuses: ORDER_STATUSES });
+  });
+
+  router.patch("/orders/:orderId/status", checkTenantAuth, (req, res) => {
+    const status = req.body?.status;
+    if (!status) return res.status(400).json({ detail: "Укажите status" });
+    const r = updateOrderStatus(req.tenant.id, req.params.orderId, status);
+    if (!r.changed) return res.status(404).json({ detail: "Заказ не найден" });
+    res.json({ ok: true, order: r.order });
+  });
+
+  router.get("/orders/export.csv", checkTenantAuth, (req, res) => {
+    const orders = listRecentOrders(req.tenant.id, 5000);
+    const header = "id,date,user,product,amount,currency,pubg_id,status,source\n";
+    const rows = orders
+      .map((o) =>
+        [
+          o.id,
+          o.created_at,
+          o.username || o.user_id,
+          `"${(o.product_title || "").replace(/"/g, '""')}"`,
+          o.final_amount ?? o.amount,
+          o.currency,
+          o.pubg_id,
+          o.status,
+          o.source,
+        ].join(","),
+      )
+      .join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.send("\uFEFF" + header + rows);
+  });
+
+  router.get("/branding", checkTenantAuth, (req, res) => {
+    const t = req.tenant;
+    res.json({
+      shop_name: t.shop_name,
+      theme_accent: t.theme_accent,
+      theme_bg: t.theme_bg,
+      promo_title: t.promo_title,
+      promo_ends_at: t.promo_ends_at,
+      notify_chat_ids: t.notify_chat_ids,
+      plan_id: t.plan_id,
+    });
+  });
+
+  router.patch("/branding", checkTenantAuth, (req, res) => {
+    const body = req.body || {};
+    updateTenant(req.tenant.id, {
+      shop_name: body.shop_name,
+      theme_accent: body.theme_accent,
+      theme_bg: body.theme_bg,
+      promo_title: body.promo_title,
+      promo_ends_at: body.promo_ends_at,
+      notify_chat_ids: body.notify_chat_ids,
+    });
+    res.json({ ok: true });
+  });
+
+  router.post("/branding/upload", checkTenantAuth, (req, res) => {
+    const kind = req.body?.kind || "logo";
+    const b64 = req.body?.image_base64;
+    if (!b64) return res.status(400).json({ detail: "Нужен image_base64" });
+    const buf = Buffer.from(String(b64).replace(/^data:image\/\w+;base64,/, ""), "base64");
+    const dir = tenantBrandingDir(req.tenant.id);
+    const fname = kind === "banner" ? "banner.jpg" : "logo.jpg";
+    const fp = path.join(dir, fname);
+    fs.writeFileSync(fp, buf);
+    const field = kind === "banner" ? "banner_path" : "avatar_path";
+    updateTenant(req.tenant.id, { [field]: fp });
+    res.json({ ok: true, path: fp });
+  });
+
+  router.post("/broadcast", checkTenantAuth, async (req, res) => {
+    const message = String(req.body?.message ?? "").trim();
+    if (!message) return res.status(400).json({ detail: "Пустое сообщение" });
+    const runner = getBotRunner(req.tenant.id);
+    if (!runner?.bot) {
+      return res.status(400).json({ detail: "Запустите бота перед рассылкой" });
+    }
+    const result = await sendBroadcast(runner.bot, req.tenant.id, message);
+    res.json({ ok: true, ...result });
+  });
+
+  router.post("/backup", checkTenantAuth, (req, res) => {
+    const dest = backupDatabase();
+    res.json({ ok: !!dest, path: dest });
+  });
+
+  router.get("/onboarding", checkTenantAuth, (req, res) => {
+    const id = req.tenant.id;
+    res.json({
+      steps: [
+        { id: "bot", done: !!req.tenant.telegram_token, label: "Токен бота подключён" },
+        { id: "products", done: listProducts(id).length > 0, label: "Есть товары" },
+        { id: "buttons", done: listMenuButtons(id).length > 0, label: "Настроены кнопки" },
+        {
+          id: "miniapp",
+          done: true,
+          label: "Mini App",
+          url: miniAppUrlForTenant(req.tenant),
+        },
+      ],
+    });
   });
 
   router.get("/promos", checkTenantAuth, (req, res) => {
