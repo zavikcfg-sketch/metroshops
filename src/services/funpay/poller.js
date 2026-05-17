@@ -228,8 +228,8 @@ async function scanOrdersForTenant(tenant, session, opts = {}) {
     console.warn(
       `[funpay] @${tenant.slug}: заказов 0 · HTML ${d?.htmlLength ?? "?"} байт · ` +
         `якорей tc-item: ${d?.orderAnchors ?? "?"} · ` +
-        `вход: ${d?.loggedIn ? "да" : "нет"}. ` +
-        `Проверьте golden_key — это должен быть аккаунт ПРОДАВЦА с funpay.com/orders/trade`,
+        `ID в ссылках: ${(d?.orderLinkIds || []).join(", ") || "нет"} · ` +
+        `вход: ${d?.loggedIn ? "да" : "нет"}`,
     );
     return;
   }

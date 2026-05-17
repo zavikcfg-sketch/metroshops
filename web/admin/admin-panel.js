@@ -485,7 +485,10 @@ document.addEventListener("DOMContentLoaded", () => {
           $("#funpay-result").textContent =
             `FunPay OK · ID ${st.funpay_user_id || "?"} (${st.funpay_username || "?"}) · ` +
             `продаж на странице: ${st.orders_on_page ?? 0}` +
-            (dbg ? ` · HTML ${dbg.htmlLength}b, якорей ${dbg.orderAnchors}` : "") +
+            (dbg
+              ? ` · HTML ${dbg.htmlLength}b, якорей ${dbg.orderAnchors}` +
+                (dbg.orderLinkIds?.length ? `, ID: ${dbg.orderLinkIds.join(", ")}` : "")
+              : "") +
             (st.bot_running ? " · TG-бот запущен" : " · ⚠️ запустите TG-бота");
         }
       } catch (e) {

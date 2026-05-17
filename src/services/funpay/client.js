@@ -1,6 +1,12 @@
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 
+/** FunPay: числовые (#12345) и новые буквенно-цифровые (#B7LS3KMY) ID заказов. */
+export const FUNPAY_ORDER_ID_PATTERN = "[A-Za-z0-9]{4,20}";
+const ORDER_ID_IN_TEXT = new RegExp(`#?(${FUNPAY_ORDER_ID_PATTERN})`, "i");
+const ORDER_ID_IN_URL = new RegExp(`/orders/(${FUNPAY_ORDER_ID_PATTERN})(?:/|"|'|\\?|$)`, "i");
+const SKIP_ORDER_PATHS = new Set(["trade", "new", "list", "offer"]);
+
 export function stripHtml(html) {
   return String(html || "")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -129,10 +135,16 @@ export class FunPayClient {
       url += `?setlocale=${locale}`;
     }
     const html = await this.fetchGet(url);
+    const linkIds = [];
+    for (const m of html.matchAll(new RegExp(ORDER_ID_IN_URL.source, "gi"))) {
+      const id = m[1];
+      if (!SKIP_ORDER_PATHS.has(id.toLowerCase())) linkIds.push(id);
+    }
     this.lastTradeDebug = {
       htmlLength: html.length,
       tcItemTokens: (html.match(/\btc-item\b/g) || []).length,
       orderAnchors: (html.match(/<a[^>]*\btc-item\b/gi) || []).length,
+      orderLinkIds: [...new Set(linkIds)].slice(0, 10),
       hasTradePage: /orders\/trade|Мои продажи|My sales/i.test(html),
       loggedIn: html.includes("user-link-name") || html.includes("data-app-data"),
     };
@@ -142,12 +154,21 @@ export class FunPayClient {
     return html;
   }
 
+  extractOrderId(block) {
+    const tc = block.match(
+      new RegExp(`class="tc-order"[^>]*>\\s*#?(${FUNPAY_ORDER_ID_PATTERN})`, "i"),
+    );
+    if (tc) return tc[1].toUpperCase();
+    const url = block.match(ORDER_ID_IN_URL);
+    if (url && !SKIP_ORDER_PATHS.has(url[1].toLowerCase())) return url[1].toUpperCase();
+    const hash = block.match(ORDER_ID_IN_TEXT);
+    if (hash && hash[1].length >= 4) return hash[1].toUpperCase();
+    return null;
+  }
+
   parseOrderBlock(block, classAttr = "") {
-    const orderM =
-      block.match(/class="tc-order"[^>]*>\s*#?(\d+)/i) ||
-      block.match(/\/orders\/(\d+)\//);
-    if (!orderM) return null;
-    const orderId = orderM[1];
+    const orderId = this.extractOrderId(block);
+    if (!orderId) return null;
 
     let userId = null;
     let buyerName = null;
@@ -223,6 +244,34 @@ export class FunPayClient {
         const block = chunks[i].slice(0, 5000);
         const parsed = this.parseOrderBlock(block, block.slice(0, 120));
         if (!parsed || seen.has(parsed.orderId)) continue;
+        if (onlyNew && parsed.orderStatus !== "paid") continue;
+        seen.add(parsed.orderId);
+        orders.push(parsed);
+      }
+    }
+
+    if (!orders.length) {
+      for (const m of html.matchAll(new RegExp(ORDER_ID_IN_URL.source, "gi"))) {
+        const orderId = m[1].toUpperCase();
+        if (SKIP_ORDER_PATHS.has(orderId.toLowerCase()) || seen.has(orderId)) continue;
+        const idx = m.index ?? 0;
+        const block = html.slice(Math.max(0, idx - 800), idx + 3000);
+        const classHint = /\btc-item[^"']*\binfo\b/i.test(block) ? "tc-item info" : "";
+        const parsed = this.parseOrderBlock(block, classHint);
+        if (!parsed) {
+          seen.add(orderId);
+          orders.push({
+            orderId,
+            userId: null,
+            buyerName: null,
+            date: "",
+            status: "",
+            orderStatus: /\binfo\b/i.test(block) ? "paid" : "closed",
+            product: "",
+            amount: 1,
+          });
+          continue;
+        }
         if (onlyNew && parsed.orderStatus !== "paid") continue;
         seen.add(parsed.orderId);
         orders.push(parsed);
