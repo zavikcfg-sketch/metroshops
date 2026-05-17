@@ -1,5 +1,5 @@
 import { getTenantById, listActiveTenants } from "../../platform/tenants.js";
-import { getBotRunner } from "../../botManager.js";
+import { getBotRunner, resolveFunpayTelegramRunner } from "../../botManager.js";
 import { isPaidFunpayStatus, isLikelyNewFunpayOrder, extractPubgId } from "./client.js";
 import {
   funpayOrderExists,
@@ -138,15 +138,15 @@ async function onBuyerFunpayMessage(tenant, session, buyerId, msg) {
     console.warn(`[funpay] thanks reply:`, e.message);
   }
 
-  const runner = getBotRunner(tenant.id);
-  if (!runner?.bot) {
+  const tg = resolveFunpayTelegramRunner(tenant);
+  if (!tg?.bot) {
     console.warn(`[funpay] @${tenant.slug}: TG-бот не запущен — карточка в группу не ушла`);
     return;
   }
 
   const freshTenant = getTenantById(tenant.id) || tenant;
   try {
-    const sent = await sendFunpayEscortCard(runner.bot, freshTenant, updated);
+    const sent = await sendFunpayEscortCard(tg.bot, freshTenant, updated);
     if (sent) {
       updateFunpayOrderMessage(
         tenant.id,
@@ -292,13 +292,13 @@ async function retryPendingEscortCards(tenant) {
   const pending = listFunpayOrdersNeedingCard(tenant.id);
   if (!pending.length) return;
 
-  const runner = getBotRunner(tenant.id);
-  if (!runner?.bot) return;
+  const tg = resolveFunpayTelegramRunner(tenant);
+  if (!tg?.bot) return;
 
   const freshTenant = getTenantById(tenant.id) || tenant;
   for (const order of pending) {
     try {
-      const sent = await sendFunpayEscortCard(runner.bot, freshTenant, order);
+      const sent = await sendFunpayEscortCard(tg.bot, freshTenant, order);
       if (sent) {
         updateFunpayOrderMessage(
           tenant.id,

@@ -59,6 +59,22 @@ export function getFunpayOrder(botId, funpayOrderId) {
   return mapRow(row);
 }
 
+/** Найти заказ по номеру FunPay (любой бот в системе). */
+export function findFunpayOrder(funpayOrderId) {
+  const row = connect()
+    .prepare(
+      `SELECT * FROM funpay_orders WHERE funpay_order_id = ?
+       ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
+    )
+    .get(String(funpayOrderId));
+  return row ? mapRow(row) : null;
+}
+
+export function orderWithEscorts(order, escorts) {
+  if (!order || !escorts) return order;
+  return { ...order, escorts_json: JSON.stringify(escorts) };
+}
+
 export function funpayOrderExists(botId, funpayOrderId) {
   const row = connect()
     .prepare(

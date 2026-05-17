@@ -4,7 +4,6 @@ import { parseEscorts, parsePayout } from "./escorts.js";
 import { formatPayoutLines, MAX_ESCORTS, ESCORT_LEADER_USERNAME } from "./payout.js";
 import { updateFunpayOrderMessage } from "./repository.js";
 import {
-  editHtmlMessage,
   isNoopEditError,
   normalizeTelegramText,
   sendHtmlMessage,
@@ -108,12 +107,13 @@ export function buildFunpayCardKeyboard(botId, order) {
 }
 
 function freshTenant(tenant) {
-  return getTenantById(tenant.id) || tenant;
+  return getTenantById(tenant?.id) || tenant;
 }
 
-/** Новая карточка в группу (только новый заказ / первая отправка). */
-export async function sendFunpayEscortCard(bot, tenant, order) {
-  if (order.group_message_id) {
+/** Новая карточка — только новый заказ (первая отправка). */
+export async function sendFunpayEscortCard(bot, tenant, order, opts = {}) {
+  const { forceNew = false } = opts;
+  if (!forceNew && order.group_message_id) {
     return {
       chatId: String(order.group_chat_id),
       messageId: order.group_message_id,
@@ -128,7 +128,7 @@ export async function sendFunpayEscortCard(bot, tenant, order) {
   }
 
   const text = buildFunpayCardText(t, order);
-  const markup = buildFunpayCardKeyboard(t.id, order);
+  const markup = buildFunpayCardKeyboard(order.bot_id || t.id, order);
 
   const msg = await sendHtmlMessage(bot, t.id, chatId, text, { reply_markup: markup });
   const usedChatId = String(msg.chat?.id ?? chatId);
@@ -137,48 +137,74 @@ export async function sendFunpayEscortCard(bot, tenant, order) {
 }
 
 /**
- * Обновить карточку на месте (кнопки в группе).
- * @param {{ chatId: string, messageId: number } | null} target — сообщение из callback (предпочтительно)
+ * Обновить карточку по нажатию кнопки: сначала edit, если не вышло — удалить старое и одно новое.
  */
-export async function editFunpayEscortCard(bot, tenant, order, target = null) {
-  const t = freshTenant(tenant);
-  const text = buildFunpayCardText(t, order);
-  const markup = buildFunpayCardKeyboard(t.id, order);
-
-  const chatId = String(
-    target?.chatId ?? order.group_chat_id ?? t.funpay_escort_chat_id ?? "",
-  ).trim();
-  const messageId = target?.messageId ?? order.group_message_id;
-
-  if (!chatId || !messageId) {
-    console.warn(`[funpay] edit #${order.funpay_order_id}: нет message_id`);
-    return null;
+export async function applyFunpayCardFromCtx(ctx, order) {
+  const tenant = freshTenant(getTenantById(order.bot_id));
+  if (!tenant) {
+    console.warn(`[funpay] apply card: tenant ${order.bot_id} не найден`);
+    return false;
   }
+
+  const text = buildFunpayCardText(tenant, order);
+  const markup = buildFunpayCardKeyboard(order.bot_id, order);
+  const msg = ctx.callbackQuery?.message;
+  const chatId = msg ? String(msg.chat.id) : null;
+  const messageId = msg?.message_id;
+
+  const editOpts = {
+    reply_markup: markup,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
 
   try {
-    await editHtmlMessage(bot, t.id, chatId, messageId, text, { reply_markup: markup });
-    if (
-      String(order.group_chat_id || "") !== chatId ||
-      Number(order.group_message_id) !== Number(messageId)
-    ) {
-      updateFunpayOrderMessage(t.id, order.funpay_order_id, chatId, messageId);
+    await ctx.editMessageText(text, editOpts);
+    if (chatId && messageId) {
+      updateFunpayOrderMessage(order.bot_id, order.funpay_order_id, chatId, messageId);
     }
-    return { chatId, messageId };
+    return true;
   } catch (e) {
     if (isNoopEditError(e)) {
-      return { chatId, messageId };
+      try {
+        await ctx.editMessageReplyMarkup({ reply_markup: markup });
+      } catch {
+        /* only keyboard */
+      }
+      return true;
     }
-    console.warn(`[funpay] edit card #${order.funpay_order_id}:`, e.message);
-    return null;
+
+    console.warn(`[funpay] edit #${order.funpay_order_id}:`, e.message, "→ замена сообщения");
+
+    if (chatId && messageId) {
+      try {
+        await ctx.deleteMessage();
+      } catch (delErr) {
+        console.warn(`[funpay] delete #${order.funpay_order_id}:`, delErr.message);
+      }
+    }
+
+    const escortChat = String(tenant.funpay_escort_chat_id || chatId || "").trim();
+    if (!escortChat) return false;
+
+    try {
+      const sent = await sendHtmlMessage(ctx.api, tenant.id, escortChat, text, {
+        reply_markup: markup,
+      });
+      updateFunpayOrderMessage(
+        order.bot_id,
+        order.funpay_order_id,
+        String(sent.chat?.id ?? escortChat),
+        sent.message_id,
+      );
+      return true;
+    } catch (sendErr) {
+      console.warn(`[funpay] replace card #${order.funpay_order_id}:`, sendErr.message);
+      return false;
+    }
   }
 }
 
-/** @deprecated используйте editFunpayEscortCard */
-export async function refreshFunpayEscortCard(bot, tenant, order, target = null) {
-  return editFunpayEscortCard(bot, tenant, order, target);
-}
-
-/** ID сообщения из нажатой inline-кнопки. */
 export function cardTargetFromCallback(ctx) {
   const msg = ctx.callbackQuery?.message;
   if (!msg?.message_id || !msg.chat?.id) return null;

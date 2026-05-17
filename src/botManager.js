@@ -19,6 +19,28 @@ export function getBotRunner(tenantId) {
   return runners.get(tenantId) || null;
 }
 
+/** FunPay настроен на tenant, но polling может идти через другой slug с тем же токеном. */
+export function resolveFunpayTelegramRunner(configTenant) {
+  const direct = getBotRunner(configTenant.id);
+  if (direct?.bot) {
+    return { bot: direct.bot, configTenant };
+  }
+  const token = String(configTenant.telegram_token || "").trim();
+  if (!token) return null;
+  for (const t of listActiveTenants()) {
+    if (t.id === configTenant.id) continue;
+    if (String(t.telegram_token || "").trim() !== token) continue;
+    const r = getBotRunner(t.id);
+    if (r?.bot) {
+      console.warn(
+        `[funpay] @${configTenant.slug}: карточки через запущенный @${t.slug} (один токен Telegram)`,
+      );
+      return { bot: r.bot, configTenant };
+    }
+  }
+  return null;
+}
+
 /** Один токен Telegram = один polling. При дублях в БД оставляем main или самый старый. */
 function pickOneTenantPerToken(tenants) {
   const byToken = new Map();
