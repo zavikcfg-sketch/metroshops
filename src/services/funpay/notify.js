@@ -1,4 +1,6 @@
 import { FP_STATUSES } from "./repository.js";
+import { parseEscorts, parsePayout } from "./escorts.js";
+import { formatPayoutLines, MAX_ESCORTS, ESCORT_LEADER_USERNAME } from "./payout.js";
 
 function esc(s) {
   return String(s ?? "")
@@ -9,34 +11,51 @@ function esc(s) {
 
 export function buildFunpayCardText(tenant, order) {
   const statusLabel = FP_STATUSES[order.status] || order.status;
+  const escorts = parseEscorts(order);
+  const payouts = order.status === "done" ? parsePayout(order) : null;
+
   const lines = [
-    `🛒 <b>FunPay · новый заказ</b>`,
+    `🛒 <b>FunPay · заказ сопровождения</b>`,
     `🏪 ${esc(tenant.shop_name || tenant.display_name)}`,
     "",
-    `📦 <b>${esc(order.product || "Товар")}</b>`,
-    `🆔 Заказ FunPay: <code>#${esc(order.funpay_order_id)}</code>`,
+    `📦 <b>${esc(order.product || "Сопровождение")}</b>`,
+    `🆔 <code>#${esc(order.funpay_order_id)}</code>`,
   ];
 
-  if (order.buyer_funpay_id) {
-    lines.push(`👤 Покупатель ID: <code>${esc(order.buyer_funpay_id)}</code>`);
-  }
   if (order.buyer_name) {
-    lines.push(`📛 Ник: ${esc(order.buyer_name)}`);
+    lines.push(`📛 Покупатель: ${esc(order.buyer_name)}`);
+  }
+  if (order.buyer_funpay_id) {
+    lines.push(`👤 FunPay ID: <code>${esc(order.buyer_funpay_id)}</code>`);
   }
   if (order.pubg_id) {
     lines.push(`🎮 Player ID: <code>${esc(order.pubg_id)}</code>`);
   }
-  if (order.amount > 1) {
-    lines.push(`🔢 Количество: ${order.amount} шт.`);
+  if (order.order_amount > 0) {
+    lines.push(`💰 Сумма заказа: ${esc(order.order_amount)} ₽`);
   }
 
-  lines.push("", `<b>Описание покупки:</b>`);
-  const desc = (order.description || "—").slice(0, 1200);
-  lines.push(esc(desc));
+  lines.push("", `📊 Статус: ${statusLabel}`);
 
-  lines.push("", `Статус: ${statusLabel}`);
-  if (order.claimed_by_name) {
-    lines.push(`Сопровождает: <b>${esc(order.claimed_by_name)}</b>`);
+  if (escorts.length) {
+    lines.push("", `<b>👥 Сопровождающие (${escorts.length}/${MAX_ESCORTS}):</b>`);
+    for (const e of escorts) {
+      const crown =
+        String(e.username || "")
+          .replace(/^@/, "")
+          .toLowerCase() === ESCORT_LEADER_USERNAME
+          ? " 👑"
+          : "";
+      lines.push(`• ${esc(e.username || e.user_id)}${crown}`);
+    }
+  } else if (order.status !== "done" && order.status !== "cancelled") {
+    lines.push("", `<i>Места: 0/${MAX_ESCORTS} — нажмите «Взять сопровождение»</i>`);
+  }
+
+  if (payouts?.length && order.order_amount > 0) {
+    lines.push("", `<b>💵 Распределение (75% пула):</b>`);
+    lines.push(esc(formatPayoutLines(payouts, order.order_amount)));
+    lines.push("", `<i>Лидер @${ESCORT_LEADER_USERNAME}: 50% пула при команде 2–3 чел.</i>`);
   }
 
   return lines.join("\n");
@@ -44,26 +63,27 @@ export function buildFunpayCardText(tenant, order) {
 
 export function buildFunpayCardKeyboard(botId, order) {
   const oid = order.funpay_order_id;
+  const escorts = parseEscorts(order);
   const rows = [];
+  const n = escorts.length;
 
-  if (order.status === "new" && !order.claimed_by) {
-    rows.push([
-      { text: "🙋 Взять в сопровождение", callback_data: `fp|claim|${oid}` },
-    ]);
-  } else if (order.status === "claimed") {
-    rows.push([
-      { text: "✅ Сопровождение завершено", callback_data: `fp|done|${oid}` },
-      { text: "↩️ Вернуть в очередь", callback_data: `fp|release|${oid}` },
-    ]);
-  }
-
-  if (order.status !== "cancelled" && order.status !== "done") {
-    rows.push([{ text: "❌ Отказ / отмена", callback_data: `fp|cancel|${oid}` }]);
+  if (order.status !== "done" && order.status !== "cancelled") {
+    if (n < MAX_ESCORTS) {
+      rows.push([{ text: `🙋 Взять сопровождение (${n}/${MAX_ESCORTS})`, callback_data: `fp|join|${oid}` }]);
+    }
+    rows.push([{ text: "🚪 Выйти из сопровождения", callback_data: `fp|leave|${oid}` }]);
+    if (n >= 1) {
+      rows.push([{ text: "✅ Готово · запрос отзыва", callback_data: `fp|done|${oid}` }]);
+    }
+    if (n > 0) {
+      rows.push([{ text: "🔄 Сбросить состав", callback_data: `fp|reset|${oid}` }]);
+    }
+    rows.push([{ text: "❌ Отмена заказа", callback_data: `fp|cancel|${oid}` }]);
   }
 
   rows.push([
     {
-      text: "💬 Открыть заказ на FunPay",
+      text: "💬 Открыть на FunPay",
       url: `https://funpay.com/orders/${oid}/`,
     },
   ]);

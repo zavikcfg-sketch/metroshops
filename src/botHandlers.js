@@ -29,13 +29,17 @@ import {
   updateOrderStatus,
 } from "./services/orderService.js";
 import { notifyAdminsNewOrder, notifyUserOrderStatus, parseNotifyChatIds } from "./services/notify.js";
+import { getFunpayOrder, setFunpayOrderStatus } from "./services/funpay/repository.js";
 import {
-  claimFunpayOrder,
-  getFunpayOrder,
-  releaseFunpayOrder,
-  setFunpayOrderStatus,
-} from "./services/funpay/repository.js";
+  joinEscort,
+  leaveEscort,
+  resetEscorts,
+  completeEscortOrder,
+  userInEscort,
+} from "./services/funpay/escorts.js";
 import { refreshFunpayEscortCard } from "./services/funpay/notify.js";
+import { sendFunPayMessageToBuyer } from "./services/funpay/messaging.js";
+import { FUNPAY_REVIEW_REQUEST } from "./services/funpay/messages.js";
 
 function formatProductLine(product) {
   if (product.amount <= 0) return [product.id, `${product.title} — по запросу`];
@@ -556,48 +560,81 @@ export async function runTenantBot(tenant) {
 
     let updated = order;
 
-    if (action === "claim") {
-      if (order.claimed_by && order.claimed_by !== userId) {
-        await ctx.answerCallbackQuery({
-          text: `Уже взял: ${order.claimed_by_name || order.claimed_by}`,
-          show_alert: true,
-        });
+    if (action === "join" || action === "claim") {
+      const r = joinEscort(botId, fpOrderId, userId, userName);
+      if (!r.ok) {
+        await ctx.answerCallbackQuery({ text: r.error, show_alert: true });
         return;
       }
-      if (!order.claimed_by) {
-        claimFunpayOrder(botId, fpOrderId, userId, userName);
-        updated = getFunpayOrder(botId, fpOrderId);
-      }
+      updated = getFunpayOrder(botId, fpOrderId);
       await refreshFunpayEscortCard(bot, tenant, updated);
-      await ctx.answerCallbackQuery({ text: "Вы взяли заказ в сопровождение" });
+      await ctx.answerCallbackQuery({
+        text: `Вы в составе (${r.escorts.length}/3)`,
+      });
       return;
     }
 
-    if (action === "release") {
-      if (order.claimed_by && order.claimed_by !== userId && !isAdmin(userId, adminIds)) {
-        await ctx.answerCallbackQuery({ text: "Заказ взял другой сопровождающий", show_alert: true });
+    if (action === "leave" || action === "release") {
+      const r = leaveEscort(botId, fpOrderId, userId);
+      if (!r.ok) {
+        await ctx.answerCallbackQuery({ text: r.error, show_alert: true });
         return;
       }
-      releaseFunpayOrder(botId, fpOrderId);
       updated = getFunpayOrder(botId, fpOrderId);
       await refreshFunpayEscortCard(bot, tenant, updated);
-      await ctx.answerCallbackQuery({ text: "Заказ снова в очереди" });
+      await ctx.answerCallbackQuery({ text: "Вы вышли из состава" });
+      return;
+    }
+
+    if (action === "reset" || action === "replace") {
+      if (!isAdmin(userId, adminIds)) {
+        await ctx.answerCallbackQuery({ text: "Только для админов", show_alert: true });
+        return;
+      }
+      resetEscorts(botId, fpOrderId);
+      updated = getFunpayOrder(botId, fpOrderId);
+      await refreshFunpayEscortCard(bot, tenant, updated);
+      await ctx.answerCallbackQuery({ text: "Состав сброшен — можно набрать заново" });
       return;
     }
 
     if (action === "done") {
-      if (order.claimed_by && order.claimed_by !== userId && !isAdmin(userId, adminIds)) {
-        await ctx.answerCallbackQuery({ text: "Заказ ведёт другой сопровождающий", show_alert: true });
+      if (!userInEscort(order, userId) && !isAdmin(userId, adminIds)) {
+        await ctx.answerCallbackQuery({
+          text: "Нажимает участник состава или админ",
+          show_alert: true,
+        });
         return;
       }
-      setFunpayOrderStatus(botId, fpOrderId, "done");
-      updated = getFunpayOrder(botId, fpOrderId);
+      const r = completeEscortOrder(botId, fpOrderId);
+      if (!r.ok) {
+        await ctx.answerCallbackQuery({ text: r.error, show_alert: true });
+        return;
+      }
+      updated = r.order;
+      if (updated.buyer_funpay_id) {
+        try {
+          await sendFunPayMessageToBuyer(
+            tenant,
+            updated.buyer_funpay_id,
+            FUNPAY_REVIEW_REQUEST,
+          );
+        } catch (e) {
+          console.warn(`[funpay] review msg #${fpOrderId}:`, e.message);
+        }
+      }
       await refreshFunpayEscortCard(bot, tenant, updated);
-      await ctx.answerCallbackQuery({ text: "Заказ отмечен выполненным" });
+      await ctx.answerCallbackQuery({
+        text: "Готово! Покупателю отправлен запрос подтвердить заказ и отзыв",
+      });
       return;
     }
 
     if (action === "cancel") {
+      if (!isAdmin(userId, adminIds)) {
+        await ctx.answerCallbackQuery({ text: "Только админ", show_alert: true });
+        return;
+      }
       setFunpayOrderStatus(botId, fpOrderId, "cancelled");
       updated = getFunpayOrder(botId, fpOrderId);
       await refreshFunpayEscortCard(bot, tenant, updated);

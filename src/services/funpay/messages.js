@@ -11,3 +11,9 @@ export const FUNPAY_INVALID_ID =
 
 export const FUNPAY_ID_RECEIVED =
   "Спасибо! Player ID получен ✅ Сопровождающие увидят заказ и скоро выйдут на связь.";
+
+export const FUNPAY_REVIEW_REQUEST =
+  process.env.FUNPAY_REVIEW_REQUEST ||
+  "Сопровождение завершено! 🛡️\n\n" +
+    "Пожалуйста, подтвердите выполнение заказа на FunPay и оставьте хороший отзыв — нам это очень важно.\n\n" +
+    "Ждём вас снова! Спасибо за покупку ❤️";

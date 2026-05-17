@@ -363,15 +363,29 @@ export class FunPayClient {
     }
   }
 
-  buildDescriptionFromApiOrder(o) {
-    const parts = [];
-    const td = o.type_data || {};
-    if (td.player) parts.push(`Player ID: ${td.player}`);
-    for (const f of Object.values(td.fields || {})) {
-      if (f?.value) parts.push(`${f.name ? `${f.name}: ` : ""}${f.value}`);
+  formatFieldValue(v) {
+    if (v == null) return "";
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      return String(v);
     }
-    if (o.description) parts.push(o.description);
-    return parts.filter(Boolean).join("\n");
+    if (typeof v === "object") {
+      if ("value" in v) return this.formatFieldValue(v.value);
+      if ("text" in v) return this.formatFieldValue(v.text);
+      if ("label" in v) return this.formatFieldValue(v.label);
+    }
+    return "";
+  }
+
+  buildDescriptionFromApiOrder(o) {
+    const td = o.type_data || {};
+    if (td.player) return `Player ID: ${td.player}`;
+    return "";
+  }
+
+  parseOrderAmount(o) {
+    const raw = o.amount ?? o.sum ?? o.price;
+    const n = parseFloat(String(raw ?? "").replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
   }
 
   async fetchOrderViaApi(orderId) {
@@ -402,12 +416,19 @@ export class FunPayClient {
     const pubgId =
       extractPubgId(description) ||
       (o.type_data?.player ? String(o.type_data.player) : null);
+    const productTitle =
+      o.subcategory?.name ||
+      o.subcategory_name ||
+      o.description ||
+      "Сопровождение Metro Royale";
 
     return {
       orderId: o.order_uid || oid,
       buyerName: o.buyer?.name || null,
       buyerFunpayId: o.buyer?.user_id != null ? String(o.buyer.user_id) : null,
       description,
+      productTitle: String(productTitle).slice(0, 300),
+      orderAmount: this.parseOrderAmount(o),
       pubgId,
       orderStatus: o.status === "paid" ? "paid" : o.status || "closed",
       chatNode: o.chat?.node_name || null,

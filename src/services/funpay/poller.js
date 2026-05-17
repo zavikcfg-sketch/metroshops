@@ -171,18 +171,15 @@ async function startOrderFlow(tenant, session, brief, details) {
   }
   brief.userId = buyerId;
 
-  const description =
-    details.description ||
-    [brief.product, brief.status ? `Статус: ${brief.status}` : ""].filter(Boolean).join("\n");
-
   insertFunpayOrder(tenant.id, {
     funpayOrderId: brief.orderId,
-    product: brief.product,
+    product: details.productTitle || brief.product,
     buyerFunpayId: details.buyerFunpayId || brief.userId,
     buyerName: details.buyerName,
-    description,
+    description: "",
     pubgId: details.pubgId || null,
     amount: brief.amount,
+    orderAmount: details.orderAmount || 0,
     status: "awaiting_id",
   });
 

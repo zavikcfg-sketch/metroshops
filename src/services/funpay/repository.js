@@ -2,14 +2,15 @@ import { connect } from "../../repository.js";
 
 export const FP_STATUSES = {
   awaiting_id: "⏳ Ждём Player ID",
-  new: "🆕 Новый",
-  claimed: "👤 В работе",
+  new: "🆕 Ожидает сопровождающих",
+  in_progress: "🎮 В сопровождении",
   done: "✅ Выполнен",
   cancelled: "❌ Отменён",
 };
 
 export function initFunpaySchema() {
-  connect().exec(`
+  const conn = connect();
+  conn.exec(`
     CREATE TABLE IF NOT EXISTS funpay_orders (
       bot_id TEXT NOT NULL,
       funpay_order_id TEXT NOT NULL,
@@ -19,9 +20,12 @@ export function initFunpaySchema() {
       description TEXT NOT NULL DEFAULT '',
       pubg_id TEXT,
       amount INTEGER NOT NULL DEFAULT 1,
+      order_amount REAL NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'new',
       claimed_by INTEGER,
       claimed_by_name TEXT,
+      escorts_json TEXT NOT NULL DEFAULT '[]',
+      payout_json TEXT,
       group_chat_id TEXT,
       group_message_id INTEGER,
       created_at TEXT NOT NULL,
@@ -30,6 +34,19 @@ export function initFunpaySchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_funpay_orders_status ON funpay_orders(bot_id, status);
   `);
+  migrateFunpayColumns(conn);
+}
+
+function migrateFunpayColumns(conn) {
+  const cols = conn.prepare("PRAGMA table_info(funpay_orders)").all();
+  const add = (name, ddl) => {
+    if (!cols.some((c) => c.name === name)) {
+      conn.exec(`ALTER TABLE funpay_orders ADD COLUMN ${ddl}`);
+    }
+  };
+  add("order_amount", "order_amount REAL NOT NULL DEFAULT 0");
+  add("escorts_json", "escorts_json TEXT NOT NULL DEFAULT '[]'");
+  add("payout_json", "payout_json TEXT");
 }
 
 export function getFunpayOrder(botId, funpayOrderId) {
@@ -59,9 +76,9 @@ export function insertFunpayOrder(botId, data) {
     .prepare(
       `INSERT INTO funpay_orders (
         bot_id, funpay_order_id, product, buyer_funpay_id, buyer_name,
-        description, pubg_id, amount, status, group_chat_id, group_message_id,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        description, pubg_id, amount, order_amount, status, escorts_json,
+        group_chat_id, group_message_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?)`,
     )
     .run(
       botId,
@@ -72,6 +89,7 @@ export function insertFunpayOrder(botId, data) {
       data.description || "",
       data.pubgId || null,
       data.amount ?? 1,
+      Number(data.orderAmount) || 0,
       status,
       data.groupChatId ? String(data.groupChatId) : null,
       data.groupMessageId ?? null,
@@ -122,15 +140,24 @@ export function updateFunpayOrderMessage(botId, funpayOrderId, chatId, messageId
     .run(String(chatId), messageId, now, botId, String(funpayOrderId));
 }
 
-export function claimFunpayOrder(botId, funpayOrderId, userId, userName) {
+export function saveFunpayEscorts(botId, funpayOrderId, escorts) {
   const now = new Date().toISOString();
   connect()
     .prepare(
-      `UPDATE funpay_orders SET status = 'claimed', claimed_by = ?, claimed_by_name = ?, updated_at = ?
-       WHERE bot_id = ? AND funpay_order_id = ? AND status = 'new' AND claimed_by IS NULL`,
+      `UPDATE funpay_orders SET escorts_json = ?, updated_at = ?
+       WHERE bot_id = ? AND funpay_order_id = ?`,
     )
-    .run(userId, userName, now, botId, String(funpayOrderId));
-  return getFunpayOrder(botId, funpayOrderId);
+    .run(JSON.stringify(escorts), now, botId, String(funpayOrderId));
+}
+
+export function saveFunpayPayout(botId, funpayOrderId, payouts) {
+  const now = new Date().toISOString();
+  connect()
+    .prepare(
+      `UPDATE funpay_orders SET payout_json = ?, updated_at = ?
+       WHERE bot_id = ? AND funpay_order_id = ?`,
+    )
+    .run(JSON.stringify(payouts), now, botId, String(funpayOrderId));
 }
 
 export function setFunpayOrderStatus(botId, funpayOrderId, status) {
@@ -140,17 +167,6 @@ export function setFunpayOrderStatus(botId, funpayOrderId, status) {
       `UPDATE funpay_orders SET status = ?, updated_at = ? WHERE bot_id = ? AND funpay_order_id = ?`,
     )
     .run(status, now, botId, String(funpayOrderId));
-  return getFunpayOrder(botId, funpayOrderId);
-}
-
-export function releaseFunpayOrder(botId, funpayOrderId) {
-  const now = new Date().toISOString();
-  connect()
-    .prepare(
-      `UPDATE funpay_orders SET status = 'new', claimed_by = NULL, claimed_by_name = NULL, updated_at = ?
-       WHERE bot_id = ? AND funpay_order_id = ? AND status = 'claimed'`,
-    )
-    .run(now, botId, String(funpayOrderId));
   return getFunpayOrder(botId, funpayOrderId);
 }
 
@@ -164,9 +180,12 @@ function mapRow(row) {
     description: row.description,
     pubg_id: row.pubg_id,
     amount: row.amount,
+    order_amount: row.order_amount ?? 0,
     status: row.status,
     claimed_by: row.claimed_by,
     claimed_by_name: row.claimed_by_name,
+    escorts_json: row.escorts_json || "[]",
+    payout_json: row.payout_json,
     group_chat_id: row.group_chat_id,
     group_message_id: row.group_message_id,
     created_at: row.created_at,
