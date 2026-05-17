@@ -7,7 +7,6 @@ import {
   editHtmlMessage,
   isNoopEditError,
   normalizeTelegramText,
-  ResendCardError,
   sendHtmlMessage,
 } from "./telegramChat.js";
 
@@ -112,7 +111,15 @@ function freshTenant(tenant) {
   return getTenantById(tenant.id) || tenant;
 }
 
+/** Новая карточка в группу (только новый заказ / первая отправка). */
 export async function sendFunpayEscortCard(bot, tenant, order) {
+  if (order.group_message_id) {
+    return {
+      chatId: String(order.group_chat_id),
+      messageId: order.group_message_id,
+    };
+  }
+
   const t = freshTenant(tenant);
   const chatId = String(t.funpay_escort_chat_id || "").trim();
   if (!chatId) {
@@ -126,51 +133,54 @@ export async function sendFunpayEscortCard(bot, tenant, order) {
   const msg = await sendHtmlMessage(bot, t.id, chatId, text, { reply_markup: markup });
   const usedChatId = String(msg.chat?.id ?? chatId);
 
-  return { chatId: usedChatId, messageId: msg.message_id, tenant: freshTenant(t) };
+  return { chatId: usedChatId, messageId: msg.message_id };
 }
 
-export async function refreshFunpayEscortCard(bot, tenant, order) {
+/**
+ * Обновить карточку на месте (кнопки в группе).
+ * @param {{ chatId: string, messageId: number } | null} target — сообщение из callback (предпочтительно)
+ */
+export async function editFunpayEscortCard(bot, tenant, order, target = null) {
   const t = freshTenant(tenant);
   const text = buildFunpayCardText(t, order);
   const markup = buildFunpayCardKeyboard(t.id, order);
-  const chatId = String(order.group_chat_id || t.funpay_escort_chat_id || "").trim();
-  const messageId = order.group_message_id;
 
-  if (!chatId) {
-    return sendFunpayEscortCard(bot, t, order);
-  }
+  const chatId = String(
+    target?.chatId ?? order.group_chat_id ?? t.funpay_escort_chat_id ?? "",
+  ).trim();
+  const messageId = target?.messageId ?? order.group_message_id;
 
-  if (!messageId) {
-    const sent = await sendFunpayEscortCard(bot, t, order);
-    if (sent) {
-      updateFunpayOrderMessage(t.id, order.funpay_order_id, sent.chatId, sent.messageId);
-    }
-    return sent;
+  if (!chatId || !messageId) {
+    console.warn(`[funpay] edit #${order.funpay_order_id}: нет message_id`);
+    return null;
   }
 
   try {
     await editHtmlMessage(bot, t.id, chatId, messageId, text, { reply_markup: markup });
+    if (
+      String(order.group_chat_id || "") !== chatId ||
+      Number(order.group_message_id) !== Number(messageId)
+    ) {
+      updateFunpayOrderMessage(t.id, order.funpay_order_id, chatId, messageId);
+    }
     return { chatId, messageId };
   } catch (e) {
-    if (isNoopEditError(e)) return { chatId, messageId };
-
-    const needResend =
-      e instanceof ResendCardError ||
-      String(e?.message || "").includes("message to edit not found") ||
-      String(e?.message || "").includes("chat not found");
-
-    if (!needResend) {
-      console.warn(`[funpay] refresh card #${order.funpay_order_id}:`, e.message);
-      return null;
+    if (isNoopEditError(e)) {
+      return { chatId, messageId };
     }
-
-    console.log(
-      `[funpay] #${order.funpay_order_id}: повторная отправка карточки (${e.code || "resend"})`,
-    );
-    const sent = await sendFunpayEscortCard(bot, freshTenant(t), order);
-    if (sent) {
-      updateFunpayOrderMessage(t.id, order.funpay_order_id, sent.chatId, sent.messageId);
-    }
-    return sent;
+    console.warn(`[funpay] edit card #${order.funpay_order_id}:`, e.message);
+    return null;
   }
+}
+
+/** @deprecated используйте editFunpayEscortCard */
+export async function refreshFunpayEscortCard(bot, tenant, order, target = null) {
+  return editFunpayEscortCard(bot, tenant, order, target);
+}
+
+/** ID сообщения из нажатой inline-кнопки. */
+export function cardTargetFromCallback(ctx) {
+  const msg = ctx.callbackQuery?.message;
+  if (!msg?.message_id || !msg.chat?.id) return null;
+  return { chatId: String(msg.chat.id), messageId: msg.message_id };
 }

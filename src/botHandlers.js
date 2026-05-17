@@ -36,7 +36,7 @@ import {
   completeEscortOrder,
   userInEscort,
 } from "./services/funpay/escorts.js";
-import { refreshFunpayEscortCard } from "./services/funpay/notify.js";
+import { cardTargetFromCallback, editFunpayEscortCard } from "./services/funpay/notify.js";
 import { sendFunPayMessageToBuyer } from "./services/funpay/messaging.js";
 import { FUNPAY_REVIEW_REQUEST } from "./services/funpay/messages.js";
 
@@ -562,8 +562,10 @@ export async function runTenantBot(tenant) {
 
     const liveTenant = getTenantById(botId) || tenant;
     const escortChat = String(liveTenant.funpay_escort_chat_id || "").trim();
+    const chatIdStr = String(ctx.chat?.id ?? "");
     const inEscortGroup =
-      escortChat && String(ctx.chat?.id) === escortChat;
+      (escortChat && chatIdStr === escortChat) ||
+      (order.group_chat_id && chatIdStr === String(order.group_chat_id));
     const userId = ctx.from?.id;
     const isStaff = isAdmin(userId, adminIds) || inEscortGroup;
 
@@ -577,6 +579,7 @@ export async function runTenantBot(tenant) {
       : [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") || String(userId);
 
     let updated = order;
+    const cardMsg = cardTargetFromCallback(ctx);
 
     if (action === "join" || action === "claim") {
       const r = joinEscort(botId, fpOrderId, userId, userName);
@@ -585,7 +588,7 @@ export async function runTenantBot(tenant) {
         return;
       }
       updated = getFunpayOrder(botId, fpOrderId);
-      await refreshFunpayEscortCard(bot, liveTenant, updated);
+      await editFunpayEscortCard(bot, liveTenant, updated, cardMsg);
       await ctx.answerCallbackQuery({
         text: `Вы в составе (${r.escorts.length}/3)`,
       });
@@ -599,7 +602,7 @@ export async function runTenantBot(tenant) {
         return;
       }
       updated = getFunpayOrder(botId, fpOrderId);
-      await refreshFunpayEscortCard(bot, liveTenant, updated);
+      await editFunpayEscortCard(bot, liveTenant, updated, cardMsg);
       await ctx.answerCallbackQuery({ text: "Вы вышли из состава" });
       return;
     }
@@ -611,7 +614,7 @@ export async function runTenantBot(tenant) {
       }
       resetEscorts(botId, fpOrderId);
       updated = getFunpayOrder(botId, fpOrderId);
-      await refreshFunpayEscortCard(bot, liveTenant, updated);
+      await editFunpayEscortCard(bot, liveTenant, updated, cardMsg);
       await ctx.answerCallbackQuery({ text: "Состав сброшен — можно набрать заново" });
       return;
     }
@@ -641,7 +644,7 @@ export async function runTenantBot(tenant) {
           console.warn(`[funpay] review msg #${fpOrderId}:`, e.message);
         }
       }
-      await refreshFunpayEscortCard(bot, liveTenant, updated);
+      await editFunpayEscortCard(bot, liveTenant, updated, cardMsg);
       await ctx.answerCallbackQuery({
         text: "Готово! Покупателю отправлен запрос подтвердить заказ и отзыв",
       });
@@ -655,7 +658,7 @@ export async function runTenantBot(tenant) {
       }
       setFunpayOrderStatus(botId, fpOrderId, "cancelled");
       updated = getFunpayOrder(botId, fpOrderId);
-      await refreshFunpayEscortCard(bot, liveTenant, updated);
+      await editFunpayEscortCard(bot, liveTenant, updated, cardMsg);
       await ctx.answerCallbackQuery({ text: "Заказ отменён" });
       return;
     }

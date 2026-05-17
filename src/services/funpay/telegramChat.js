@@ -6,11 +6,6 @@ export function extractMigrateToChatId(err) {
   return id != null ? String(id) : null;
 }
 
-export function isChatUpgradedError(err) {
-  const m = String(err?.description ?? err?.message ?? "").toLowerCase();
-  return m.includes("upgraded to a supergroup");
-}
-
 export function isNoopEditError(err) {
   const m = String(err?.description ?? err?.message ?? "").toLowerCase();
   return m.includes("message is not modified") || m.includes("exactly the same");
@@ -55,37 +50,51 @@ export async function sendHtmlMessage(bot, tenantId, chatId, text, extra = {}) {
   }
 }
 
+/** Только редактирование существующего сообщения (без новой отправки). */
 export async function editHtmlMessage(bot, tenantId, chatId, messageId, text, extra = {}) {
   const body = normalizeTelegramText(text);
-  const opts = {
+  const base = {
     chat_id: chatId,
     message_id: messageId,
-    parse_mode: "HTML",
     disable_web_page_preview: true,
     ...extra,
   };
 
   try {
-    return await bot.api.editMessageText(body, opts);
+    return await bot.api.editMessageText(body, { ...base, parse_mode: "HTML" });
   } catch (e) {
     if (isNoopEditError(e)) return null;
 
     const migrated = extractMigrateToChatId(e);
     if (migrated) {
       applyEscortChatMigration(tenantId, migrated, chatId);
-      throw new ResendCardError("chat_migrated", migrated);
+      return null;
     }
 
-    if (isEmptyTextError(e) || isChatUpgradedError(e)) {
-      throw new ResendCardError("edit_failed", e.message);
+    if (isEmptyTextError(e)) {
+      const plain = body.replace(/<[^>]+>/g, "").trim();
+      if (plain) {
+        try {
+          return await bot.api.editMessageText(plain, base);
+        } catch (e2) {
+          if (isNoopEditError(e2)) return null;
+        }
+      }
     }
+
+    if (extra.reply_markup) {
+      try {
+        await bot.api.editMessageReplyMarkup({
+          chat_id: chatId,
+          message_id: messageId,
+          reply_markup: extra.reply_markup,
+        });
+        return null;
+      } catch (e3) {
+        if (isNoopEditError(e3)) return null;
+      }
+    }
+
     throw e;
-  }
-}
-
-export class ResendCardError extends Error {
-  constructor(code, detail) {
-    super(String(detail || code));
-    this.code = code;
   }
 }
