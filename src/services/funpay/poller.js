@@ -162,10 +162,14 @@ async function onBuyerFunpayMessage(tenant, session, buyerId, msg) {
 }
 
 async function startOrderFlow(tenant, session, brief, details) {
-  if (!brief.userId) {
-    console.warn(`[funpay] #${brief.orderId}: нет ID покупателя на FunPay`);
-    return;
+  const buyerId = String(brief.userId || details.buyerFunpayId || "").trim();
+  if (!buyerId) {
+    console.warn(
+      `[funpay] #${brief.orderId}: нет ID покупателя — повторим при следующем скане`,
+    );
+    return false;
   }
+  brief.userId = buyerId;
 
   const description =
     details.description ||
@@ -204,6 +208,7 @@ async function startOrderFlow(tenant, session, brief, details) {
       text: details.pubgId,
     });
   }
+  return true;
 }
 
 async function scanOrdersForTenant(tenant, session, opts = {}) {
@@ -260,17 +265,16 @@ async function scanOrdersForTenant(tenant, session, opts = {}) {
     };
     try {
       details = await session.client.getOrderDetails(brief.orderId);
-      if (!details.buyerFunpayId && brief.userId) {
-        details.buyerFunpayId = brief.userId;
-      }
-      const buyerFromPage = details.buyerFunpayId;
-      if (!brief.userId && buyerFromPage) brief.userId = buyerFromPage;
+      if (details.buyerFunpayId) brief.userId = details.buyerFunpayId;
+      if (!details.buyerFunpayId && brief.userId) details.buyerFunpayId = brief.userId;
+      if (details.buyerName) brief.buyerName = details.buyerName;
+      if (!brief.product && details.description) brief.product = details.description.slice(0, 200);
     } catch (e) {
       console.warn(`[funpay] details #${brief.orderId}:`, e.message);
     }
 
-    await startOrderFlow(tenant, session, brief, details);
-    started++;
+    const ok = await startOrderFlow(tenant, session, brief, details);
+    if (ok) started++;
   }
 
   if (started) {

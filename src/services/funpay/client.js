@@ -172,13 +172,24 @@ export class FunPayClient {
 
     let userId = null;
     let buyerName = null;
-    const buyerSpan = block.match(
-      /media-user-name[\s\S]*?<span[^>]*data-href="\/users\/(\d+)\/"[^>]*>([^<]*)</i,
-    );
-    if (buyerSpan) {
-      userId = buyerSpan[1];
-      buyerName = stripHtml(buyerSpan[2]);
-    } else {
+    const buyerLink =
+      block.match(
+        /media-user-name[\s\S]*?<a[^>]*data-href="\/users\/(\d+)\/"[^>]*>([^<]*)</i,
+      ) ||
+      block.match(
+        /media-user-name[\s\S]*?<span[^>]*data-href="\/users\/(\d+)\/"[^>]*>([^<]*)</i,
+      );
+    if (buyerLink) {
+      userId = buyerLink[1];
+      buyerName = stripHtml(buyerLink[2]);
+    } else if (this.appData?.userId) {
+      const chatNode = block.match(/users-(\d+)-(\d+)/);
+      if (chatNode) {
+        const seller = String(this.appData.userId);
+        userId = chatNode[1] === seller ? chatNode[2] : chatNode[1];
+      }
+    }
+    if (!userId) {
       const userM = block.match(/data-href="\/users\/(\d+)\//);
       userId = userM ? userM[1] : null;
     }
@@ -352,17 +363,83 @@ export class FunPayClient {
     }
   }
 
+  buildDescriptionFromApiOrder(o) {
+    const parts = [];
+    const td = o.type_data || {};
+    if (td.player) parts.push(`Player ID: ${td.player}`);
+    for (const f of Object.values(td.fields || {})) {
+      if (f?.value) parts.push(`${f.name ? `${f.name}: ` : ""}${f.value}`);
+    }
+    if (o.description) parts.push(o.description);
+    return parts.filter(Boolean).join("\n");
+  }
+
+  async fetchOrderViaApi(orderId) {
+    await this.ensureReady();
+    const oid = String(orderId).toUpperCase();
+    const res = await fetch("https://funpay.com/api/orders/get", {
+      method: "POST",
+      headers: {
+        "User-Agent": UA,
+        Cookie: this.cookieHeader(),
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Accept-Language": this.appData.locale || "ru",
+      },
+      body: JSON.stringify({
+        order_uids: [oid],
+        include: ["details", "users", "review"],
+      }),
+    });
+    this.captureCookies(res);
+    if (!res.ok) throw new Error(`FunPay API orders HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.status !== "SUCCESS" || !json.data?.[oid]) {
+      throw new Error(json.message || json.error || "заказ не найден в API");
+    }
+    const o = json.data[oid];
+    const description = this.buildDescriptionFromApiOrder(o);
+    const pubgId =
+      extractPubgId(description) ||
+      (o.type_data?.player ? String(o.type_data.player) : null);
+
+    return {
+      orderId: o.order_uid || oid,
+      buyerName: o.buyer?.name || null,
+      buyerFunpayId: o.buyer?.user_id != null ? String(o.buyer.user_id) : null,
+      description,
+      pubgId,
+      orderStatus: o.status === "paid" ? "paid" : o.status || "closed",
+      chatNode: o.chat?.node_name || null,
+    };
+  }
+
   async getOrderDetails(orderId) {
+    try {
+      return await this.fetchOrderViaApi(orderId);
+    } catch (e) {
+      console.warn(`[funpay] API order ${orderId}:`, e.message);
+    }
+
     const html = await this.fetchGet(`https://funpay.com/orders/${orderId}/`);
 
     const buyerM =
-      html.match(/class="media-user-name"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</i) ||
-      html.match(/class="media-user-name"[^>]*>([^<]+)</i);
-    const buyerName = buyerM ? stripHtml(buyerM[1]) : null;
-    const buyerIdM =
-      html.match(/class="param-item chat-panel"[^>]*data-id="(\d+)"/) ||
-      html.match(/data-href="\/users\/(\d+)\/"/);
-    const buyerFunpayId = buyerIdM ? buyerIdM[1] : null;
+      html.match(/media-user-name[\s\S]*?<a[^>]*data-href="\/users\/(\d+)\/"[^>]*>([^<]*)</i) ||
+      html.match(/class="media-user-name"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</i);
+    let buyerFunpayId = buyerM ? buyerM[1] : null;
+    let buyerName = buyerM ? stripHtml(buyerM[2] || buyerM[1]) : null;
+
+    if (!buyerFunpayId) {
+      const panel = html.match(/class="param-item chat-panel"[\s\S]*?data-href="\/users\/(\d+)\/"/i);
+      if (panel) buyerFunpayId = panel[1];
+    }
+    if (!buyerFunpayId && this.appData?.userId) {
+      const chatNode = html.match(/users-(\d+)-(\d+)/);
+      if (chatNode) {
+        const seller = String(this.appData.userId);
+        buyerFunpayId = chatNode[1] === seller ? chatNode[2] : chatNode[1];
+      }
+    }
 
     const descBlocks = [];
     const descRe = /class="order-desc"[^>]*>([\s\S]*?)<\/div>/gi;
@@ -374,11 +451,13 @@ export class FunPayClient {
     const pubgId = extractPubgId(description);
 
     return {
-      orderId: String(orderId),
+      orderId: String(orderId).toUpperCase(),
       buyerName,
       buyerFunpayId,
       description,
       pubgId,
+      orderStatus: null,
+      chatNode: null,
     };
   }
 }
