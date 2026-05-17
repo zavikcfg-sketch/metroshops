@@ -52,20 +52,35 @@ export class FunPayClient {
 
   async fetchPage(route = "") {
     const url = route ? `https://funpay.com/${route.replace(/^\//, "")}` : "https://funpay.com/";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "User-Agent": UA,
-        Cookie: this.cookieHeader(),
-      },
-    });
+    const headers = {
+      "User-Agent": UA,
+      Cookie: this.cookieHeader(),
+      Accept: "text/html,application/xhtml+xml",
+    };
+
+    let res = await fetch(url, { method: "GET", headers });
     this.captureCookies(res);
+    if (!res.ok) {
+      res = await fetch(url, { method: "POST", headers });
+      this.captureCookies(res);
+    }
     if (!res.ok) throw new Error(`FunPay HTTP ${res.status}`);
-    return res.text();
+    const html = await res.text();
+    if (
+      /Войти|Log in/i.test(html) &&
+      !html.includes("data-app-data") &&
+      String(route).includes("orders")
+    ) {
+      throw new Error("FunPay: сессия истекла — обновите golden_key в админке");
+    }
+    return html;
   }
 
   async init() {
     const html = await this.fetchPage();
+    if (/Войти|Log in/i.test(html) && !html.includes("data-app-data")) {
+      throw new Error("FunPay: неверный golden_key (страница входа)");
+    }
     const m = html.match(/data-app-data="([^"]+)"/);
     if (!m) throw new Error("FunPay: не удалось авторизоваться (проверьте golden_key)");
     this.appData = decodeAppData(m[1]);
@@ -78,56 +93,66 @@ export class FunPayClient {
     return this.appData;
   }
 
+  parseOrderBlock(block) {
+    const orderM =
+      block.match(/class="tc-order"[^>]*>\s*#?(\d+)/i) ||
+      block.match(/\/orders\/(\d+)\//);
+    if (!orderM) return null;
+    const orderId = orderM[1];
+
+    const userM = block.match(/data-href="\/users\/(\d+)\//);
+    const userId = userM ? userM[1] : null;
+
+    const dateM = block.match(/class="tc-date-time"[^>]*>([^<]+)</);
+    const statusM = block.match(/class="tc-status"[^>]*>([^<]+)</);
+
+    let product = "";
+    const descM = block.match(/class="order-desc"[^>]*>[\s\S]*?<div[^>]*>([^<]+)</i);
+    if (descM) product = stripHtml(descM[1]);
+    if (!product) {
+      const alt = block.match(/class="order-desc"[^>]*>([^<]+)</);
+      if (alt) product = stripHtml(alt[1]);
+    }
+
+    let amount = 1;
+    const parts = product.split(", ");
+    if (parts.length > 1 && /\d+\s*шт\./i.test(parts.at(-1))) {
+      const am = parts.at(-1).match(/(\d+)/);
+      if (am) amount = Number(am[1]);
+      product = parts.slice(0, -1).join(", ");
+    }
+
+    return {
+      orderId,
+      userId,
+      date: dateM ? stripHtml(dateM[1]) : "",
+      status: statusM ? stripHtml(statusM[1]) : "",
+      product,
+      amount,
+    };
+  }
+
   parseOrdersFromTradeHtml(html, onlyNew = false) {
     const orders = [];
-    let pos = 0;
-    while (pos < html.length) {
-      let idx = html.indexOf('class="tc-item info"', pos);
-      if (idx === -1 && !onlyNew) {
-        idx = html.indexOf('class="tc-item"', pos);
-      } else if (idx === -1) {
-        break;
+    const seen = new Set();
+    const chunks = html.split(/class="tc-item/i);
+    for (let i = 1; i < chunks.length; i++) {
+      const chunk = `class="tc-item${chunks[i]}`;
+      if (onlyNew && !/tc-item\s+info|tc-item-info/i.test(chunk.slice(0, 80))) continue;
+      const end = chunk.indexOf("</a>");
+      const block = end === -1 ? chunk.slice(0, 4000) : chunk.slice(0, end);
+      const parsed = this.parseOrderBlock(block);
+      if (!parsed || seen.has(parsed.orderId)) continue;
+      seen.add(parsed.orderId);
+      orders.push(parsed);
+    }
+    if (!orders.length) {
+      for (const m of html.matchAll(/tc-item[\s\S]{0,3500}?\/orders\/(\d+)\//gi)) {
+        const parsed = this.parseOrderBlock(m[0]);
+        if (!parsed || seen.has(parsed.orderId)) continue;
+        seen.add(parsed.orderId);
+        orders.push(parsed);
       }
-      if (onlyNew && idx !== -1 && !html.slice(idx, idx + 40).includes("info")) {
-        pos = idx + 10;
-        continue;
-      }
-      if (idx === -1) break;
-      const end = html.indexOf("</a>", idx);
-      if (end === -1) break;
-      const block = html.slice(idx, end + 4);
-      pos = end + 4;
-
-      const orderM = block.match(/class="tc-order"[^>]*>\s*#?(\d+)/i);
-      if (!orderM) continue;
-      const orderId = orderM[1];
-
-      const userM = block.match(/data-href="\/users\/(\d+)\//);
-      const userId = userM ? userM[1] : null;
-
-      const dateM = block.match(/class="tc-date-time"[^>]*>([^<]+)</);
-      const statusM = block.match(/class="tc-status"[^>]*>([^<]+)</);
-
-      let product = "";
-      const descM = block.match(/class="order-desc"[^>]*>[\s\S]*?<div>([^<]+)</i);
-      if (descM) product = stripHtml(descM[1]);
-
-      let amount = 1;
-      const parts = product.split(", ");
-      if (parts.length > 1 && /\d+\s*шт\./i.test(parts.at(-1))) {
-        const am = parts.at(-1).match(/(\d+)/);
-        if (am) amount = Number(am[1]);
-        product = parts.slice(0, -1).join(", ");
-      }
-
-      orders.push({
-        orderId,
-        userId,
-        date: dateM ? stripHtml(dateM[1]) : "",
-        status: statusM ? stripHtml(statusM[1]) : "",
-        product,
-        amount,
-      });
     }
     return orders;
   }
@@ -215,6 +240,10 @@ export class FunPayClient {
       html.match(/class="media-user-name"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</i) ||
       html.match(/class="media-user-name"[^>]*>([^<]+)</i);
     const buyerName = buyerM ? stripHtml(buyerM[1]) : null;
+    const buyerIdM =
+      html.match(/class="param-item chat-panel"[^>]*data-id="(\d+)"/) ||
+      html.match(/data-href="\/users\/(\d+)\/"/);
+    const buyerFunpayId = buyerIdM ? buyerIdM[1] : null;
 
     const descBlocks = [];
     const descRe = /class="order-desc"[^>]*>([\s\S]*?)<\/div>/gi;
@@ -233,7 +262,7 @@ export class FunPayClient {
     return {
       orderId: String(orderId),
       buyerName,
-      buyerFunpayId: null,
+      buyerFunpayId,
       description,
       pubgId,
     };
@@ -259,7 +288,7 @@ export function extractPubgId(text) {
 /** Заказ с FunPay «свежий» (сегодня / несколько минут назад). */
 export function isLikelyNewFunpayOrder(dateLabel) {
   const d = String(dateLabel || "").toLowerCase();
-  if (!d) return false;
+  if (!d) return true;
   if (/вчера|yesterday|\d{2}\.\d{2}\.\d{4}/.test(d)) return false;
   if (/сегодня|today|только что|мин\.|минут|час|hour|sec|сек/i.test(d)) return true;
   if (/\d{2}\.\d{2}\.\d{2}/.test(d)) {
@@ -271,7 +300,7 @@ export function isLikelyNewFunpayOrder(dateLabel) {
       return diff >= 0 && diff < 48 * 3600 * 1000;
     }
   }
-  return false;
+  return true;
 }
 
 export function isPaidFunpayStatus(status) {

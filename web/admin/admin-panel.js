@@ -473,7 +473,21 @@ document.addEventListener("DOMContentLoaded", () => {
       $("#funpay-key-hint").textContent = fp.golden_key_set
         ? `Ключ задан (${fp.golden_key_hint})`
         : "Golden Key ещё не сохранён";
-      $("#funpay-result").textContent = "";
+      $("#funpay-result").textContent = "Проверка подключения…";
+      try {
+        const st = await api("/funpay/status");
+        if (st.error) {
+          $("#funpay-result").textContent = `Ошибка FunPay: ${st.error}`;
+        } else if (!st.enabled) {
+          $("#funpay-result").textContent = "Включите интеграцию и сохраните настройки";
+        } else {
+          $("#funpay-result").textContent =
+            `FunPay OK · аккаунт ${st.funpay_user_id || "?"} · заказов на странице: ${st.orders_on_page ?? 0}` +
+            (st.bot_running ? " · TG-бот запущен" : " · ⚠️ запустите TG-бота в разделе «Боты»");
+        }
+      } catch (e) {
+        $("#funpay-result").textContent = e.message || "Ошибка статуса";
+      }
     }
 
     async function loadBranding() {
@@ -637,6 +651,17 @@ document.addEventListener("DOMContentLoaded", () => {
         await api("/funpay", { method: "PATCH", body: JSON.stringify(body) });
         $("#funpay-result").textContent = "Сохранено";
         loadFunpay();
+      });
+
+      $("#funpay-sync-btn")?.addEventListener("click", async () => {
+        $("#funpay-result").textContent = "Сканируем заказы…";
+        try {
+          await api("/funpay/sync", { method: "POST", body: "{}" });
+          await loadFunpay();
+          $("#funpay-result").textContent += " · скан запущен (смотрите логи сервера)";
+        } catch (e) {
+          $("#funpay-result").textContent = e.message || "Ошибка";
+        }
       });
 
       $("#funpay-test-btn")?.addEventListener("click", async () => {

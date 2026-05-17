@@ -19,6 +19,7 @@ import {
 } from "./messages.js";
 
 const sessions = new Map();
+const sessionReady = new Map();
 let orderScanTimer = null;
 
 function tenantFunpayEnabled(t) {
@@ -33,41 +34,60 @@ function listFunpayTenants() {
   return listActiveTenants().filter(tenantFunpayEnabled);
 }
 
-function getSession(goldenKey) {
+async function getSession(goldenKey) {
   const key = goldenKey.trim();
   let session = sessions.get(key);
   if (!session) {
     session = new FunPayRunnerSession(key);
     sessions.set(key, session);
-    session.start().catch((e) => {
-      console.warn("[funpay] session start:", e.message);
-      sessions.delete(key);
-    });
+    sessionReady.set(
+      key,
+      session.start().catch((e) => {
+        sessions.delete(key);
+        sessionReady.delete(key);
+        throw e;
+      }),
+    );
   }
+  await sessionReady.get(key);
   return session;
 }
 
-function syncSessions() {
+async function syncSessions() {
   const tenants = listFunpayTenants();
+  if (!tenants.length) {
+    console.log(
+      "[funpay] Нет активных интеграций: включите FunPay + golden_key + ID группы в админке нужного бота",
+    );
+    return;
+  }
+
+  console.log(`[funpay] Сканируем: ${tenants.map((t) => t.slug).join(", ")}`);
   const activeKeys = new Set();
 
   for (const tenant of tenants) {
     const key = tenant.funpay_golden_key.trim();
     activeKeys.add(key);
-    const session = getSession(key);
-    session.registerTenant(tenant, {
-      onOrdersChanged: () => scanOrdersForTenant(tenant, session, { forceTop: true }),
-    });
-    scanOrdersForTenant(tenant, session).catch((e) =>
-      console.warn(`[funpay] scan @${tenant.slug}:`, e.message),
-    );
-    restoreAwaitingChats(tenant, session);
+    try {
+      const session = await getSession(key);
+      session.registerTenant(tenant, {
+        onOrdersChanged: () =>
+          scanOrdersForTenant(tenant, session, { forceTop: true }).catch((e) =>
+            console.warn(`[funpay] counters @${tenant.slug}:`, e.message),
+          ),
+      });
+      await scanOrdersForTenant(tenant, session, { forceTop: true });
+      restoreAwaitingChats(tenant, session);
+    } catch (e) {
+      console.warn(`[funpay] session @${tenant.slug}:`, e.message);
+    }
   }
 
   for (const [key, session] of sessions) {
     if (!activeKeys.has(key)) {
       session.stop();
       sessions.delete(key);
+      sessionReady.delete(key);
     }
   }
 }
@@ -116,7 +136,7 @@ async function onBuyerFunpayMessage(tenant, session, buyerId, msg) {
 
   const runner = getBotRunner(tenant.id);
   if (!runner?.bot) {
-    console.warn(`[funpay] @${tenant.slug}: бот не запущен — карточка не отправлена`);
+    console.warn(`[funpay] @${tenant.slug}: TG-бот не запущен — карточка в группу не ушла`);
     return;
   }
 
@@ -140,7 +160,7 @@ async function onBuyerFunpayMessage(tenant, session, buyerId, msg) {
 
 async function startOrderFlow(tenant, session, brief, details) {
   if (!brief.userId) {
-    console.warn(`[funpay] #${brief.orderId}: нет buyer userId`);
+    console.warn(`[funpay] #${brief.orderId}: нет ID покупателя на FunPay`);
     return;
   }
 
@@ -163,7 +183,9 @@ async function startOrderFlow(tenant, session, brief, details) {
   try {
     lastMsg = await session.client.getUserLastMessageId(brief.userId);
     await session.client.sendChatMessage(brief.userId, FUNPAY_ASK_PLAYER_ID, lastMsg);
-    console.log(`[funpay] @${tenant.slug}: #${brief.orderId} — запрос ID в чате FunPay`);
+    console.log(
+      `[funpay] @${tenant.slug}: заказ #${brief.orderId} → запрос Player ID в чат FunPay (покупатель ${brief.userId})`,
+    );
   } catch (e) {
     console.warn(`[funpay] ask id #${brief.orderId}:`, e.message);
   }
@@ -182,19 +204,22 @@ async function startOrderFlow(tenant, session, brief, details) {
 }
 
 async function scanOrdersForTenant(tenant, session, opts = {}) {
-  const runner = getBotRunner(tenant.id);
-  if (!runner?.bot) return;
+  await session.client.ensureReady();
 
   let orders;
   try {
-    orders = await session.client.getLastOrders(opts.forceTop ? 8 : 50);
+    orders = await session.client.getLastOrders(opts.forceTop ? 12 : 50);
   } catch (e) {
     console.warn(`[funpay] orders @${tenant.slug}:`, e.message);
     return;
   }
 
-  const list = opts.forceTop ? orders.slice(0, 5) : orders;
+  const list = opts.forceTop ? orders.slice(0, 8) : orders;
+  console.log(
+    `[funpay] @${tenant.slug}: на FunPay ${orders.length} заказов, проверяем ${list.length}`,
+  );
 
+  let started = 0;
   for (const brief of list) {
     if (funpayOrderExists(tenant.id, brief.orderId)) continue;
     if (!isPaidFunpayStatus(brief.status)) continue;
@@ -222,16 +247,23 @@ async function scanOrdersForTenant(tenant, session, opts = {}) {
       if (!details.buyerFunpayId && brief.userId) {
         details.buyerFunpayId = brief.userId;
       }
+      const buyerFromPage = details.buyerFunpayId;
+      if (!brief.userId && buyerFromPage) brief.userId = buyerFromPage;
     } catch (e) {
       console.warn(`[funpay] details #${brief.orderId}:`, e.message);
     }
 
     await startOrderFlow(tenant, session, brief, details);
+    started++;
+  }
+
+  if (started) {
+    console.log(`[funpay] @${tenant.slug}: обработано новых заказов: ${started}`);
   }
 }
 
 async function tick() {
-  syncSessions();
+  await syncSessions();
 }
 
 export function startFunPayPoller() {
@@ -239,7 +271,7 @@ export function startFunPayPoller() {
   const ms = Math.max(15000, Number(process.env.FUNPAY_POLL_MS) || 35000);
   if (orderScanTimer) return;
   console.log(
-    `[funpay] Режим: запрос Player ID в чате FunPay → карточка в группу (скан ${ms} мс)`,
+    `[funpay] Старт после TG-ботов · запрос ID в чате FunPay → карточка в группу · каждые ${ms} мс`,
   );
   tick().catch((e) => console.warn("[funpay] first tick:", e.message));
   orderScanTimer = setInterval(() => {
@@ -254,4 +286,10 @@ export function stopFunPayPoller() {
   }
   for (const session of sessions.values()) session.stop();
   sessions.clear();
+  sessionReady.clear();
+}
+
+/** Ручной запуск скана (после сохранения настроек). */
+export async function runFunpaySyncNow() {
+  await tick();
 }

@@ -35,6 +35,8 @@ import { sendBroadcast } from "../services/broadcast.js";
 import { tenantBrandingDir } from "../services/branding.js";
 import { backupDatabase } from "../services/backup.js";
 import { sendFunpayEscortCard } from "../services/funpay/notify.js";
+import { FunPayClient } from "../services/funpay/client.js";
+import { runFunpaySyncNow } from "../services/funpay/poller.js";
 import fs from "fs";
 import path from "path";
 
@@ -260,6 +262,49 @@ export function mountTenantApi(router, { checkTenantAuth }) {
     }
     updateTenant(req.tenant.id, patch);
     res.json({ ok: true });
+  });
+
+  router.get("/funpay/status", checkTenantAuth, async (req, res) => {
+    const t = req.tenant;
+    const enabled =
+      !!t.funpay_enabled &&
+      String(t.funpay_golden_key || "").trim().length > 8 &&
+      !!String(t.funpay_escort_chat_id || "").trim();
+    const out = {
+      enabled,
+      slug: t.slug,
+      bot_running: !!getBotRunner(t.id)?.bot,
+      escort_chat_id: t.funpay_escort_chat_id || "",
+    };
+    if (!enabled) {
+      return res.json(out);
+    }
+    try {
+      const client = new FunPayClient(t.funpay_golden_key);
+      const app = await client.ensureReady();
+      const orders = await client.getLastOrders(8);
+      out.funpay_user_id = app.userId;
+      out.funpay_username = app.userName || app.username || null;
+      out.orders_on_page = orders.length;
+      out.latest_orders = orders.slice(0, 5).map((o) => ({
+        id: o.orderId,
+        product: o.product,
+        status: o.status,
+        date: o.date,
+      }));
+    } catch (e) {
+      out.error = e.message;
+    }
+    return res.json(out);
+  });
+
+  router.post("/funpay/sync", checkTenantAuth, async (req, res) => {
+    try {
+      await runFunpaySyncNow();
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ detail: e.message });
+    }
   });
 
   router.post("/funpay/test", checkTenantAuth, async (req, res) => {

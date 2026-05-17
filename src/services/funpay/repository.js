@@ -45,10 +45,11 @@ export function getFunpayOrder(botId, funpayOrderId) {
 export function funpayOrderExists(botId, funpayOrderId) {
   const row = connect()
     .prepare(
-      `SELECT 1 AS ok FROM funpay_orders WHERE bot_id = ? AND funpay_order_id = ?`,
+      `SELECT status FROM funpay_orders WHERE bot_id = ? AND funpay_order_id = ?`,
     )
     .get(botId, String(funpayOrderId));
-  return !!row;
+  if (!row) return false;
+  return row.status !== "ignored";
 }
 
 export function insertFunpayOrder(botId, data) {
