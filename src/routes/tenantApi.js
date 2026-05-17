@@ -286,11 +286,14 @@ export function mountTenantApi(router, { checkTenantAuth }) {
       out.funpay_user_id = app.userId;
       out.funpay_username = app.userName || app.username || null;
       out.orders_on_page = orders.length;
+      out.trade_debug = client.lastTradeDebug;
       out.latest_orders = orders.slice(0, 5).map((o) => ({
         id: o.orderId,
         product: o.product,
         status: o.status,
+        order_status: o.orderStatus,
         date: o.date,
+        buyer_id: o.userId,
       }));
     } catch (e) {
       out.error = e.message;

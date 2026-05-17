@@ -29,12 +29,22 @@ export class FunPayClient {
     this.phpSessId = null;
     this.appData = null;
     this.ready = false;
+    this.lastTradeDebug = null;
   }
 
   cookieHeader() {
-    let c = `golden_key=${this.goldenKey}`;
+    let c = `golden_key=${this.goldenKey}; cookie_prefs=1`;
     if (this.phpSessId) c += `; PHPSESSID=${this.phpSessId}`;
     return c;
+  }
+
+  baseHeaders() {
+    return {
+      "User-Agent": UA,
+      Cookie: this.cookieHeader(),
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+    };
   }
 
   captureCookies(res) {
@@ -50,39 +60,52 @@ export class FunPayClient {
     }
   }
 
-  async fetchPage(route = "") {
-    const url = route ? `https://funpay.com/${route.replace(/^\//, "")}` : "https://funpay.com/";
-    const headers = {
-      "User-Agent": UA,
-      Cookie: this.cookieHeader(),
-      Accept: "text/html,application/xhtml+xml",
-    };
-
-    let res = await fetch(url, { method: "GET", headers });
-    this.captureCookies(res);
-    if (!res.ok) {
-      res = await fetch(url, { method: "POST", headers });
+  /** GET с ручным follow redirect (как FunPayAPI). */
+  async fetchGet(url, maxRedirects = 8) {
+    let current = url;
+    for (let i = 0; i < maxRedirects; i++) {
+      const res = await fetch(current, {
+        method: "GET",
+        headers: this.baseHeaders(),
+        redirect: "manual",
+      });
       this.captureCookies(res);
+
+      if (res.status >= 300 && res.status < 400) {
+        let loc = res.headers.get("location") || "";
+        if (loc.includes("account/login") || loc.includes("/login")) {
+          throw new Error("FunPay: неверный golden_key (редирект на вход)");
+        }
+        if (!loc) throw new Error(`FunPay: редирект без Location (${res.status})`);
+        if (!loc.startsWith("http")) {
+          loc = loc.startsWith("/") ? `https://funpay.com${loc}` : `https://funpay.com/${loc}`;
+        }
+        current = loc;
+        continue;
+      }
+
+      if (!res.ok) throw new Error(`FunPay HTTP ${res.status}`);
+      return res.text();
     }
-    if (!res.ok) throw new Error(`FunPay HTTP ${res.status}`);
-    const html = await res.text();
-    if (
-      /Войти|Log in/i.test(html) &&
-      !html.includes("data-app-data") &&
-      String(route).includes("orders")
-    ) {
-      throw new Error("FunPay: сессия истекла — обновите golden_key в админке");
-    }
-    return html;
+    throw new Error("FunPay: слишком много редиректов");
+  }
+
+  async fetchPage(route = "") {
+    const path = route ? route.replace(/^\//, "") : "";
+    const url = path ? `https://funpay.com/${path}` : "https://funpay.com/";
+    return this.fetchGet(url);
   }
 
   async init() {
-    const html = await this.fetchPage();
-    if (/Войти|Log in/i.test(html) && !html.includes("data-app-data")) {
-      throw new Error("FunPay: неверный golden_key (страница входа)");
+    const html = await this.fetchGet("https://funpay.com/");
+    if (!html.includes("data-app-data")) {
+      if (/Войти|Log in/i.test(html)) {
+        throw new Error("FunPay: неверный golden_key (страница входа)");
+      }
+      throw new Error("FunPay: не удалось авторизоваться (нет data-app-data)");
     }
     const m = html.match(/data-app-data="([^"]+)"/);
-    if (!m) throw new Error("FunPay: не удалось авторизоваться (проверьте golden_key)");
+    if (!m) throw new Error("FunPay: не удалось прочитать data-app-data");
     this.appData = decodeAppData(m[1]);
     this.ready = true;
     return this.appData;
@@ -93,22 +116,62 @@ export class FunPayClient {
     return this.appData;
   }
 
-  parseOrderBlock(block) {
+  getAccountLabel() {
+    if (!this.appData) return "?";
+    return `${this.appData.userId || "?"} · ${this.appData.userName || this.appData.username || "?"}`;
+  }
+
+  async fetchOrdersTradeHtml() {
+    await this.ensureReady();
+    const locale = this.appData?.locale || "ru";
+    let url = "https://funpay.com/orders/trade";
+    if (locale && locale !== "ru") {
+      url += `?setlocale=${locale}`;
+    }
+    const html = await this.fetchGet(url);
+    this.lastTradeDebug = {
+      htmlLength: html.length,
+      tcItemTokens: (html.match(/\btc-item\b/g) || []).length,
+      orderAnchors: (html.match(/<a[^>]*\btc-item\b/gi) || []).length,
+      hasTradePage: /orders\/trade|Мои продажи|My sales/i.test(html),
+      loggedIn: html.includes("user-link-name") || html.includes("data-app-data"),
+    };
+    if (this.lastTradeDebug.orderAnchors === 0 && /account\/login|Войти/i.test(html)) {
+      throw new Error("FunPay: сессия истекла на странице продаж");
+    }
+    return html;
+  }
+
+  parseOrderBlock(block, classAttr = "") {
     const orderM =
       block.match(/class="tc-order"[^>]*>\s*#?(\d+)/i) ||
       block.match(/\/orders\/(\d+)\//);
     if (!orderM) return null;
     const orderId = orderM[1];
 
-    const userM = block.match(/data-href="\/users\/(\d+)\//);
-    const userId = userM ? userM[1] : null;
+    let userId = null;
+    let buyerName = null;
+    const buyerSpan = block.match(
+      /media-user-name[\s\S]*?<span[^>]*data-href="\/users\/(\d+)\/"[^>]*>([^<]*)</i,
+    );
+    if (buyerSpan) {
+      userId = buyerSpan[1];
+      buyerName = stripHtml(buyerSpan[2]);
+    } else {
+      const userM = block.match(/data-href="\/users\/(\d+)\//);
+      userId = userM ? userM[1] : null;
+    }
 
     const dateM = block.match(/class="tc-date-time"[^>]*>([^<]+)</);
     const statusM = block.match(/class="tc-status"[^>]*>([^<]+)</);
 
+    let orderStatus = "closed";
+    if (/\bwarning\b/.test(classAttr)) orderStatus = "refunded";
+    else if (/\binfo\b/.test(classAttr)) orderStatus = "paid";
+
     let product = "";
-    const descM = block.match(/class="order-desc"[^>]*>[\s\S]*?<div[^>]*>([^<]+)</i);
-    if (descM) product = stripHtml(descM[1]);
+    const descInner = block.match(/class="order-desc"[^>]*>[\s\S]*?<div[^>]*>([^<]+)</i);
+    if (descInner) product = stripHtml(descInner[1]);
     if (!product) {
       const alt = block.match(/class="order-desc"[^>]*>([^<]+)</);
       if (alt) product = stripHtml(alt[1]);
@@ -125,8 +188,10 @@ export class FunPayClient {
     return {
       orderId,
       userId,
+      buyerName,
       date: dateM ? stripHtml(dateM[1]) : "",
       status: statusM ? stripHtml(statusM[1]) : "",
+      orderStatus,
       product,
       amount,
     };
@@ -135,37 +200,45 @@ export class FunPayClient {
   parseOrdersFromTradeHtml(html, onlyNew = false) {
     const orders = [];
     const seen = new Set();
-    const chunks = html.split(/class="tc-item/i);
-    for (let i = 1; i < chunks.length; i++) {
-      const chunk = `class="tc-item${chunks[i]}`;
-      if (onlyNew && !/tc-item\s+info|tc-item-info/i.test(chunk.slice(0, 80))) continue;
-      const end = chunk.indexOf("</a>");
-      const block = end === -1 ? chunk.slice(0, 4000) : chunk.slice(0, end);
-      const parsed = this.parseOrderBlock(block);
+
+    const anchorRe =
+      /<a\b[^>]*\bclass=["'][^"']*\btc-item\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let m;
+    while ((m = anchorRe.exec(html)) !== null) {
+      const fullAnchor = m[0];
+      const inner = m[1];
+      const classM = fullAnchor.match(/\bclass=["']([^"']+)["']/i);
+      const classAttr = classM ? classM[1] : "";
+      if (onlyNew && !/\binfo\b/.test(classAttr)) continue;
+
+      const parsed = this.parseOrderBlock(`${fullAnchor}${inner}`, classAttr);
       if (!parsed || seen.has(parsed.orderId)) continue;
       seen.add(parsed.orderId);
       orders.push(parsed);
     }
+
     if (!orders.length) {
-      for (const m of html.matchAll(/tc-item[\s\S]{0,3500}?\/orders\/(\d+)\//gi)) {
-        const parsed = this.parseOrderBlock(m[0]);
+      const chunks = html.split(/\btc-item\b/i);
+      for (let i = 1; i < chunks.length; i++) {
+        const block = chunks[i].slice(0, 5000);
+        const parsed = this.parseOrderBlock(block, block.slice(0, 120));
         if (!parsed || seen.has(parsed.orderId)) continue;
+        if (onlyNew && parsed.orderStatus !== "paid") continue;
         seen.add(parsed.orderId);
         orders.push(parsed);
       }
     }
+
     return orders;
   }
 
   async getNewOrders() {
-    await this.ensureReady();
-    const html = await this.fetchPage("orders/trade");
+    const html = await this.fetchOrdersTradeHtml();
     return this.parseOrdersFromTradeHtml(html, true);
   }
 
   async getLastOrders(limit = 40) {
-    await this.ensureReady();
-    const html = await this.fetchPage("orders/trade");
+    const html = await this.fetchOrdersTradeHtml();
     return this.parseOrdersFromTradeHtml(html, false).slice(0, limit);
   }
 
@@ -175,11 +248,10 @@ export class FunPayClient {
     const res = await fetch(`https://funpay.com/${route.replace(/^\//, "")}`, {
       method: "POST",
       headers: {
+        ...this.baseHeaders(),
         accept: "application/json, text/javascript, */*; q=0.01",
         "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
         "x-requested-with": "XMLHttpRequest",
-        "User-Agent": UA,
-        Cookie: this.cookieHeader(),
       },
       body: Object.keys(body)
         .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(body[k])}`)
@@ -191,8 +263,8 @@ export class FunPayClient {
 
   async getUserLastMessageId(buyerId) {
     const node = chatNodeId(this.appData.userId, buyerId);
-    const html = await this.fetchPage(`chat/?node=${node}`);
-    const ids = [...html.matchAll(/chat-msg-(\d+)/g)].map((m) => Number(m[1]));
+    const html = await this.fetchGet(`https://funpay.com/chat/?node=${node}`);
+    const ids = [...html.matchAll(/chat-msg-(\d+)/g)].map((n) => Number(n[1]));
     return ids.length ? Math.max(...ids) : 0;
   }
 
@@ -219,7 +291,6 @@ export class FunPayClient {
   }
 
   async runnerPoll(objects, pendingRequest = null) {
-    await this.ensureReady();
     const payload = {
       objects: JSON.stringify(objects),
       request: pendingRequest ? JSON.stringify(pendingRequest) : "false",
@@ -233,8 +304,7 @@ export class FunPayClient {
   }
 
   async getOrderDetails(orderId) {
-    await this.ensureReady();
-    const html = await this.fetchPage(`orders/${orderId}/`);
+    const html = await this.fetchGet(`https://funpay.com/orders/${orderId}/`);
 
     const buyerM =
       html.match(/class="media-user-name"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</i) ||
@@ -251,12 +321,7 @@ export class FunPayClient {
     while ((dm = descRe.exec(html))) {
       descBlocks.push(stripHtml(dm[1]));
     }
-    if (!descBlocks.length) {
-      const alt = html.match(/class="order-desc"[^>]*>([\s\S]*?)<\/div>/i);
-      if (alt) descBlocks.push(stripHtml(alt[1]));
-    }
     const description = descBlocks.filter(Boolean).join("\n\n") || "";
-
     const pubgId = extractPubgId(description);
 
     return {
@@ -285,11 +350,10 @@ export function extractPubgId(text) {
   return nums ? nums[1] : null;
 }
 
-/** Заказ с FunPay «свежий» (сегодня / несколько минут назад). */
 export function isLikelyNewFunpayOrder(dateLabel) {
   const d = String(dateLabel || "").toLowerCase();
   if (!d) return true;
-  if (/вчера|yesterday|\d{2}\.\d{2}\.\d{4}/.test(d)) return false;
+  if (/вчера|yesterday/i.test(d)) return false;
   if (/сегодня|today|только что|мин\.|минут|час|hour|sec|сек/i.test(d)) return true;
   if (/\d{2}\.\d{2}\.\d{2}/.test(d)) {
     const m = d.match(/(\d{2})\.(\d{2})\.(\d{2,4})/);
@@ -303,9 +367,12 @@ export function isLikelyNewFunpayOrder(dateLabel) {
   return true;
 }
 
-export function isPaidFunpayStatus(status) {
+export function isPaidFunpayStatus(status, orderStatus = "") {
+  if (orderStatus === "refunded") return false;
+  if (orderStatus === "paid") return true;
   const s = String(status || "").toLowerCase();
   if (!s) return true;
   if (/возврат|refund|отмен|cancel/i.test(s)) return false;
+  if (/оплачен|paid|ожида/i.test(s)) return true;
   return true;
 }

@@ -481,9 +481,12 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (!st.enabled) {
           $("#funpay-result").textContent = "Включите интеграцию и сохраните настройки";
         } else {
+          const dbg = st.trade_debug;
           $("#funpay-result").textContent =
-            `FunPay OK · аккаунт ${st.funpay_user_id || "?"} · заказов на странице: ${st.orders_on_page ?? 0}` +
-            (st.bot_running ? " · TG-бот запущен" : " · ⚠️ запустите TG-бота в разделе «Боты»");
+            `FunPay OK · ID ${st.funpay_user_id || "?"} (${st.funpay_username || "?"}) · ` +
+            `продаж на странице: ${st.orders_on_page ?? 0}` +
+            (dbg ? ` · HTML ${dbg.htmlLength}b, якорей ${dbg.orderAnchors}` : "") +
+            (st.bot_running ? " · TG-бот запущен" : " · ⚠️ запустите TG-бота");
         }
       } catch (e) {
         $("#funpay-result").textContent = e.message || "Ошибка статуса";

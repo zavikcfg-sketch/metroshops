@@ -70,11 +70,14 @@ async function syncSessions() {
     activeKeys.add(key);
     try {
       const session = await getSession(key);
+      console.log(`[funpay] Аккаунт FunPay (${tenant.slug}): ${session.client.getAccountLabel()}`);
       session.registerTenant(tenant, {
-        onOrdersChanged: () =>
-          scanOrdersForTenant(tenant, session, { forceTop: true }).catch((e) =>
+        onOrdersChanged: () => {
+          console.log(`[funpay] @${tenant.slug}: счётчик заказов FunPay изменился`);
+          return scanOrdersForTenant(tenant, session, { forceTop: true }).catch((e) =>
             console.warn(`[funpay] counters @${tenant.slug}:`, e.message),
-          ),
+          );
+        },
       });
       await scanOrdersForTenant(tenant, session, { forceTop: true });
       restoreAwaitingChats(tenant, session);
@@ -214,15 +217,28 @@ async function scanOrdersForTenant(tenant, session, opts = {}) {
     return;
   }
 
-  const list = opts.forceTop ? orders.slice(0, 8) : orders;
+  const list = opts.forceTop ? orders.slice(0, 12) : orders;
+  const paidCount = orders.filter((o) => o.orderStatus === "paid").length;
   console.log(
-    `[funpay] @${tenant.slug}: на FunPay ${orders.length} заказов, проверяем ${list.length}`,
+    `[funpay] @${tenant.slug}: продаж на FunPay ${orders.length} (ожидают: ${paidCount}), проверяем ${list.length}`,
   );
+
+  if (!orders.length) {
+    const d = session.client.lastTradeDebug;
+    console.warn(
+      `[funpay] @${tenant.slug}: заказов 0 · HTML ${d?.htmlLength ?? "?"} байт · ` +
+        `якорей tc-item: ${d?.orderAnchors ?? "?"} · ` +
+        `вход: ${d?.loggedIn ? "да" : "нет"}. ` +
+        `Проверьте golden_key — это должен быть аккаунт ПРОДАВЦА с funpay.com/orders/trade`,
+    );
+    return;
+  }
 
   let started = 0;
   for (const brief of list) {
     if (funpayOrderExists(tenant.id, brief.orderId)) continue;
-    if (!isPaidFunpayStatus(brief.status)) continue;
+    if (!isPaidFunpayStatus(brief.status, brief.orderStatus)) continue;
+    if (opts.forceTop && brief.orderStatus === "closed") continue;
 
     if (!opts.forceTop && !isLikelyNewFunpayOrder(brief.date)) {
       insertFunpayOrder(tenant.id, {
