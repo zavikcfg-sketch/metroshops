@@ -130,6 +130,20 @@ export function listAwaitingFunpayOrders(botId) {
     .map(mapRow);
 }
 
+/** Заказы с Player ID, но карточка в группу не дошла (сбой отправки / смена ID чата). */
+export function listFunpayOrdersNeedingCard(botId) {
+  return connect()
+    .prepare(
+      `SELECT * FROM funpay_orders
+       WHERE bot_id = ?
+         AND pubg_id IS NOT NULL AND TRIM(pubg_id) != ''
+         AND (group_message_id IS NULL OR group_message_id = 0)
+         AND status IN ('new', 'in_progress')`,
+    )
+    .all(botId)
+    .map(mapRow);
+}
+
 export function updateFunpayOrderMessage(botId, funpayOrderId, chatId, messageId) {
   const now = new Date().toISOString();
   connect()

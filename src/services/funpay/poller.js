@@ -1,4 +1,4 @@
-import { listActiveTenants } from "../../platform/tenants.js";
+import { getTenantById, listActiveTenants } from "../../platform/tenants.js";
 import { getBotRunner } from "../../botManager.js";
 import { isPaidFunpayStatus, isLikelyNewFunpayOrder, extractPubgId } from "./client.js";
 import {
@@ -8,6 +8,7 @@ import {
   getAwaitingFunpayOrder,
   setFunpayOrderPubgId,
   listAwaitingFunpayOrders,
+  listFunpayOrdersNeedingCard,
 } from "./repository.js";
 import { sendFunpayEscortCard } from "./notify.js";
 import { initFunpaySchema } from "./repository.js";
@@ -143,8 +144,9 @@ async function onBuyerFunpayMessage(tenant, session, buyerId, msg) {
     return;
   }
 
+  const freshTenant = getTenantById(tenant.id) || tenant;
   try {
-    const sent = await sendFunpayEscortCard(runner.bot, tenant, updated);
+    const sent = await sendFunpayEscortCard(runner.bot, freshTenant, updated);
     if (sent) {
       updateFunpayOrderMessage(
         tenant.id,
@@ -158,6 +160,11 @@ async function onBuyerFunpayMessage(tenant, session, buyerId, msg) {
     }
   } catch (e) {
     console.warn(`[funpay] card #${order.funpay_order_id}:`, e.message);
+    if (String(e.message || "").includes("supergroup")) {
+      console.warn(
+        `[funpay] Группа стала супергруппой — перезапустите бота или напишите любое сообщение в группе; ID обновится автоматически при следующей отправке`,
+      );
+    }
   }
 }
 
@@ -276,6 +283,36 @@ async function scanOrdersForTenant(tenant, session, opts = {}) {
 
   if (started) {
     console.log(`[funpay] @${tenant.slug}: обработано новых заказов: ${started}`);
+  }
+
+  await retryPendingEscortCards(tenant);
+}
+
+async function retryPendingEscortCards(tenant) {
+  const pending = listFunpayOrdersNeedingCard(tenant.id);
+  if (!pending.length) return;
+
+  const runner = getBotRunner(tenant.id);
+  if (!runner?.bot) return;
+
+  const freshTenant = getTenantById(tenant.id) || tenant;
+  for (const order of pending) {
+    try {
+      const sent = await sendFunpayEscortCard(runner.bot, freshTenant, order);
+      if (sent) {
+        updateFunpayOrderMessage(
+          tenant.id,
+          order.funpay_order_id,
+          sent.chatId,
+          sent.messageId,
+        );
+        console.log(
+          `[funpay] @${tenant.slug}: повторная карточка #${order.funpay_order_id} → группа`,
+        );
+      }
+    } catch (e) {
+      console.warn(`[funpay] retry card #${order.funpay_order_id}:`, e.message);
+    }
   }
 }
 
