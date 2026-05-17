@@ -1,6 +1,7 @@
 import { connect } from "../../repository.js";
 
 export const FP_STATUSES = {
+  awaiting_id: "⏳ Ждём Player ID",
   new: "🆕 Новый",
   claimed: "👤 В работе",
   done: "✅ Выполнен",
@@ -52,13 +53,14 @@ export function funpayOrderExists(botId, funpayOrderId) {
 
 export function insertFunpayOrder(botId, data) {
   const now = new Date().toISOString();
+  const status = data.status || "new";
   connect()
     .prepare(
       `INSERT INTO funpay_orders (
         bot_id, funpay_order_id, product, buyer_funpay_id, buyer_name,
         description, pubg_id, amount, status, group_chat_id, group_message_id,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       botId,
@@ -69,12 +71,44 @@ export function insertFunpayOrder(botId, data) {
       data.description || "",
       data.pubgId || null,
       data.amount ?? 1,
+      status,
       data.groupChatId ? String(data.groupChatId) : null,
       data.groupMessageId ?? null,
       now,
       now,
     );
   return getFunpayOrder(botId, data.funpayOrderId);
+}
+
+export function getAwaitingFunpayOrder(botId, buyerFunpayId) {
+  const row = connect()
+    .prepare(
+      `SELECT * FROM funpay_orders
+       WHERE bot_id = ? AND buyer_funpay_id = ? AND status = 'awaiting_id'
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(botId, String(buyerFunpayId));
+  return row ? mapRow(row) : null;
+}
+
+export function setFunpayOrderPubgId(botId, funpayOrderId, pubgId) {
+  const now = new Date().toISOString();
+  connect()
+    .prepare(
+      `UPDATE funpay_orders SET pubg_id = ?, status = 'new', updated_at = ?
+       WHERE bot_id = ? AND funpay_order_id = ?`,
+    )
+    .run(pubgId, now, botId, String(funpayOrderId));
+  return getFunpayOrder(botId, funpayOrderId);
+}
+
+export function listAwaitingFunpayOrders(botId) {
+  return connect()
+    .prepare(
+      `SELECT * FROM funpay_orders WHERE bot_id = ? AND status = 'awaiting_id'`,
+    )
+    .all(botId)
+    .map(mapRow);
 }
 
 export function updateFunpayOrderMessage(botId, funpayOrderId, chatId, messageId) {

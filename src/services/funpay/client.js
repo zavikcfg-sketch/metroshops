@@ -1,7 +1,7 @@
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 
-function stripHtml(html) {
+export function stripHtml(html) {
   return String(html || "")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "")
@@ -80,10 +80,18 @@ export class FunPayClient {
 
   parseOrdersFromTradeHtml(html, onlyNew = false) {
     const orders = [];
-    const classNeedle = onlyNew ? 'class="tc-item info"' : 'class="tc-item"';
     let pos = 0;
     while (pos < html.length) {
-      const idx = html.indexOf(classNeedle, pos);
+      let idx = html.indexOf('class="tc-item info"', pos);
+      if (idx === -1 && !onlyNew) {
+        idx = html.indexOf('class="tc-item"', pos);
+      } else if (idx === -1) {
+        break;
+      }
+      if (onlyNew && idx !== -1 && !html.slice(idx, idx + 40).includes("info")) {
+        pos = idx + 10;
+        continue;
+      }
       if (idx === -1) break;
       const end = html.indexOf("</a>", idx);
       if (end === -1) break;
@@ -130,6 +138,75 @@ export class FunPayClient {
     return this.parseOrdersFromTradeHtml(html, true);
   }
 
+  async getLastOrders(limit = 40) {
+    await this.ensureReady();
+    const html = await this.fetchPage("orders/trade");
+    return this.parseOrdersFromTradeHtml(html, false).slice(0, limit);
+  }
+
+  async post(route, data) {
+    await this.ensureReady();
+    const body = { ...data, csrf_token: this.appData["csrf-token"] };
+    const res = await fetch(`https://funpay.com/${route.replace(/^\//, "")}`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/javascript, */*; q=0.01",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "x-requested-with": "XMLHttpRequest",
+        "User-Agent": UA,
+        Cookie: this.cookieHeader(),
+      },
+      body: Object.keys(body)
+        .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(body[k])}`)
+        .join("&"),
+    });
+    this.captureCookies(res);
+    return res.text();
+  }
+
+  async getUserLastMessageId(buyerId) {
+    const node = chatNodeId(this.appData.userId, buyerId);
+    const html = await this.fetchPage(`chat/?node=${node}`);
+    const ids = [...html.matchAll(/chat-msg-(\d+)/g)].map((m) => Number(m[1]));
+    return ids.length ? Math.max(...ids) : 0;
+  }
+
+  async sendChatMessage(buyerId, text, lastMessageId = 0) {
+    await this.ensureReady();
+    const node = chatNodeId(this.appData.userId, buyerId);
+    const last = lastMessageId || (await this.getUserLastMessageId(buyerId));
+    const payload = {
+      objects: JSON.stringify([
+        { type: "orders_counters", id: this.appData.userId, tag: "metrobot", data: true },
+        {
+          type: "chat_node",
+          id: node,
+          data: { node, last_message: last, content: "" },
+        },
+      ]),
+      request: JSON.stringify({
+        action: "chat_message",
+        data: { node, last_message: last + 1, content: text },
+      }),
+    };
+    await this.post("runner/", payload);
+    return last + 1;
+  }
+
+  async runnerPoll(objects, pendingRequest = null) {
+    await this.ensureReady();
+    const payload = {
+      objects: JSON.stringify(objects),
+      request: pendingRequest ? JSON.stringify(pendingRequest) : "false",
+    };
+    const raw = await this.post("runner/", payload);
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
   async getOrderDetails(orderId) {
     await this.ensureReady();
     const html = await this.fetchPage(`orders/${orderId}/`);
@@ -163,12 +240,43 @@ export class FunPayClient {
   }
 }
 
+export function chatNodeId(userA, userB) {
+  const a = parseInt(userA, 10);
+  const b = parseInt(userB, 10);
+  return a < b ? `users-${a}-${b}` : `users-${b}-${a}`;
+}
+
 export function extractPubgId(text) {
   const t = String(text || "");
   const labeled =
     t.match(/(?:player\s*id|id\s*игрока|айди|pubg)[:\s#]*(\d{5,15})/i) ||
     t.match(/(?:ник|nickname)[:\s]*([^\n,]{3,32})/i);
   if (labeled) return labeled[1].trim();
-  const nums = t.match(/\b(\d{9,12})\b/);
+  const nums = t.match(/\b(\d{8,12})\b/);
   return nums ? nums[1] : null;
+}
+
+/** Заказ с FunPay «свежий» (сегодня / несколько минут назад). */
+export function isLikelyNewFunpayOrder(dateLabel) {
+  const d = String(dateLabel || "").toLowerCase();
+  if (!d) return false;
+  if (/вчера|yesterday|\d{2}\.\d{2}\.\d{4}/.test(d)) return false;
+  if (/сегодня|today|только что|мин\.|минут|час|hour|sec|сек/i.test(d)) return true;
+  if (/\d{2}\.\d{2}\.\d{2}/.test(d)) {
+    const m = d.match(/(\d{2})\.(\d{2})\.(\d{2,4})/);
+    if (m) {
+      const year = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+      const dt = new Date(year, Number(m[2]) - 1, Number(m[1]));
+      const diff = Date.now() - dt.getTime();
+      return diff >= 0 && diff < 48 * 3600 * 1000;
+    }
+  }
+  return false;
+}
+
+export function isPaidFunpayStatus(status) {
+  const s = String(status || "").toLowerCase();
+  if (!s) return true;
+  if (/возврат|refund|отмен|cancel/i.test(s)) return false;
+  return true;
 }
