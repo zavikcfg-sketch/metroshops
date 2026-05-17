@@ -152,6 +152,9 @@ export function rowToTenant(row) {
     promo_ends_at: row.promo_ends_at || null,
     plan_id: row.plan_id || "free",
     notify_chat_ids: row.notify_chat_ids || "",
+    funpay_enabled: !!row.funpay_enabled,
+    funpay_golden_key: row.funpay_golden_key || "",
+    funpay_escort_chat_id: row.funpay_escort_chat_id || "",
   };
 }
 
@@ -272,12 +275,15 @@ export function updateTenant(id, data) {
     promo_ends_at: "promo_ends_at",
     plan_id: "plan_id",
     notify_chat_ids: "notify_chat_ids",
+    funpay_enabled: "funpay_enabled",
+    funpay_golden_key: "funpay_golden_key",
+    funpay_escort_chat_id: "funpay_escort_chat_id",
     active: "active",
   };
   for (const [k, col] of Object.entries(map)) {
     if (k in data) {
       let v = data[k];
-      if (k === "active") v = v ? 1 : 0;
+      if (k === "active" || k === "funpay_enabled") v = v ? 1 : 0;
       fields.push(`${col} = ?`);
       values.push(v);
     }

@@ -16,6 +16,9 @@ export function runMigrations() {
   addTenantCol("promo_ends_at", "promo_ends_at TEXT");
   addTenantCol("plan_id", "plan_id TEXT DEFAULT 'free'");
   addTenantCol("notify_chat_ids", "notify_chat_ids TEXT DEFAULT ''");
+  addTenantCol("funpay_enabled", "funpay_enabled INTEGER NOT NULL DEFAULT 0");
+  addTenantCol("funpay_golden_key", "funpay_golden_key TEXT DEFAULT ''");
+  addTenantCol("funpay_escort_chat_id", "funpay_escort_chat_id TEXT DEFAULT ''");
 
   const orderCols = conn.prepare("PRAGMA table_info(orders)").all();
   const addOrderCol = (name, ddl) => {

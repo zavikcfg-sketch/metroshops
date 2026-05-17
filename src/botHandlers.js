@@ -29,6 +29,13 @@ import {
   updateOrderStatus,
 } from "./services/orderService.js";
 import { notifyAdminsNewOrder, notifyUserOrderStatus, parseNotifyChatIds } from "./services/notify.js";
+import {
+  claimFunpayOrder,
+  getFunpayOrder,
+  releaseFunpayOrder,
+  setFunpayOrderStatus,
+} from "./services/funpay/repository.js";
+import { refreshFunpayEscortCard } from "./services/funpay/notify.js";
 
 function formatProductLine(product) {
   if (product.amount <= 0) return [product.id, `${product.title} — по запросу`];
@@ -515,6 +522,90 @@ export async function runTenantBot(tenant) {
       ...parseNotifyChatIds(tenant.notify_chat_ids),
     ];
     await notifyAdminsNewOrder(bot, tenant, order, product.title, price, notifyIds);
+  });
+
+  bot.callbackQuery(/^fp\|/, async (ctx) => {
+    const parts = ctx.callbackQuery.data.split("|");
+    const action = parts[1];
+    const fpOrderId = parts[2];
+    if (!fpOrderId || !action) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const order = getFunpayOrder(botId, fpOrderId);
+    if (!order) {
+      await ctx.answerCallbackQuery({ text: "Заказ не найден", show_alert: true });
+      return;
+    }
+
+    const escortChat = String(tenant.funpay_escort_chat_id || "").trim();
+    const inEscortGroup =
+      escortChat && String(ctx.chat?.id) === escortChat;
+    const userId = ctx.from?.id;
+    const isStaff = isAdmin(userId, adminIds) || inEscortGroup;
+
+    if (!isStaff) {
+      await ctx.answerCallbackQuery({ text: "Нет доступа", show_alert: true });
+      return;
+    }
+
+    const userName = ctx.from?.username
+      ? `@${ctx.from.username}`
+      : [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") || String(userId);
+
+    let updated = order;
+
+    if (action === "claim") {
+      if (order.claimed_by && order.claimed_by !== userId) {
+        await ctx.answerCallbackQuery({
+          text: `Уже взял: ${order.claimed_by_name || order.claimed_by}`,
+          show_alert: true,
+        });
+        return;
+      }
+      if (!order.claimed_by) {
+        claimFunpayOrder(botId, fpOrderId, userId, userName);
+        updated = getFunpayOrder(botId, fpOrderId);
+      }
+      await refreshFunpayEscortCard(bot, tenant, updated);
+      await ctx.answerCallbackQuery({ text: "Вы взяли заказ в сопровождение" });
+      return;
+    }
+
+    if (action === "release") {
+      if (order.claimed_by && order.claimed_by !== userId && !isAdmin(userId, adminIds)) {
+        await ctx.answerCallbackQuery({ text: "Заказ взял другой сопровождающий", show_alert: true });
+        return;
+      }
+      releaseFunpayOrder(botId, fpOrderId);
+      updated = getFunpayOrder(botId, fpOrderId);
+      await refreshFunpayEscortCard(bot, tenant, updated);
+      await ctx.answerCallbackQuery({ text: "Заказ снова в очереди" });
+      return;
+    }
+
+    if (action === "done") {
+      if (order.claimed_by && order.claimed_by !== userId && !isAdmin(userId, adminIds)) {
+        await ctx.answerCallbackQuery({ text: "Заказ ведёт другой сопровождающий", show_alert: true });
+        return;
+      }
+      setFunpayOrderStatus(botId, fpOrderId, "done");
+      updated = getFunpayOrder(botId, fpOrderId);
+      await refreshFunpayEscortCard(bot, tenant, updated);
+      await ctx.answerCallbackQuery({ text: "Заказ отмечен выполненным" });
+      return;
+    }
+
+    if (action === "cancel") {
+      setFunpayOrderStatus(botId, fpOrderId, "cancelled");
+      updated = getFunpayOrder(botId, fpOrderId);
+      await refreshFunpayEscortCard(bot, tenant, updated);
+      await ctx.answerCallbackQuery({ text: "Заказ отменён" });
+      return;
+    }
+
+    await ctx.answerCallbackQuery();
   });
 
   bot.callbackQuery(/^adm\|/, async (ctx) => {

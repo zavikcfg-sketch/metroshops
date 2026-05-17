@@ -4,6 +4,7 @@ import { logPortDiagnostics } from "./port.js";
 import { initDb } from "./repository.js";
 import { scheduleDailyBackup } from "./services/backup.js";
 import { startHealthMonitor } from "./services/monitor.js";
+import { startFunPayPoller } from "./services/funpay/poller.js";
 
 /** Только админка (http-wrapper.js / домен Bothost). */
 export async function mainAdmin() {
@@ -23,6 +24,7 @@ export async function main() {
   initDb();
   scheduleDailyBackup();
   startHealthMonitor();
+  startFunPayPoller();
   process.on("unhandledRejection", (err) => {
     const msg = err?.error?.message ?? err?.message ?? String(err);
     if (msg.includes("409") || msg.includes("getUpdates")) {

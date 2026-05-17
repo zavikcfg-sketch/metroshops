@@ -15,6 +15,7 @@ import {
 import { PRESET_CUSTOM_EMOJIS } from "../catalog.js";
 import {
   deleteMenuButton,
+  getTenantById,
   getTenantBySlug,
   listMenuButtons,
   miniAppUrlForTenant,
@@ -33,6 +34,7 @@ import { updateOrderStatus, ORDER_STATUSES } from "../services/orderService.js";
 import { sendBroadcast } from "../services/broadcast.js";
 import { tenantBrandingDir } from "../services/branding.js";
 import { backupDatabase } from "../services/backup.js";
+import { sendFunpayEscortCard } from "../services/funpay/notify.js";
 import fs from "fs";
 import path from "path";
 
@@ -223,8 +225,70 @@ export function mountTenantApi(router, { checkTenantAuth }) {
           label: "Mini App",
           url: miniAppUrlForTenant(req.tenant),
         },
+        {
+          id: "funpay",
+          done:
+            !!req.tenant.funpay_enabled &&
+            !!String(req.tenant.funpay_golden_key || "").trim() &&
+            !!String(req.tenant.funpay_escort_chat_id || "").trim(),
+          label: "FunPay → группа сопровождения",
+        },
       ],
     });
+  });
+
+  router.get("/funpay", checkTenantAuth, (req, res) => {
+    const t = req.tenant;
+    const key = String(t.funpay_golden_key || "");
+    res.json({
+      funpay_enabled: !!t.funpay_enabled,
+      funpay_escort_chat_id: t.funpay_escort_chat_id || "",
+      golden_key_set: key.length > 4,
+      golden_key_hint: key.length > 4 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "",
+    });
+  });
+
+  router.patch("/funpay", checkTenantAuth, (req, res) => {
+    const body = req.body || {};
+    const patch = {
+      funpay_enabled: !!body.funpay_enabled,
+      funpay_escort_chat_id: String(body.funpay_escort_chat_id ?? "").trim(),
+    };
+    const newKey = String(body.funpay_golden_key ?? "").trim();
+    if (newKey && !newKey.includes("…")) {
+      patch.funpay_golden_key = newKey;
+    }
+    updateTenant(req.tenant.id, patch);
+    res.json({ ok: true });
+  });
+
+  router.post("/funpay/test", checkTenantAuth, async (req, res) => {
+    const runner = getBotRunner(req.tenant.id);
+    if (!runner?.bot) {
+      return res.status(400).json({ detail: "Сначала запустите Telegram-бота" });
+    }
+    const t = getTenantById(req.tenant.id);
+    if (!String(t.funpay_escort_chat_id || "").trim()) {
+      return res.status(400).json({ detail: "Укажите ID группы сопровождения" });
+    }
+    const demo = {
+      funpay_order_id: "TEST",
+      product: "Сопровождение ПРЕМИУМ (тест)",
+      buyer_funpay_id: "123456",
+      buyer_name: "FunPayBuyer",
+      description: "Player ID: 51234567890\nКомментарий покупателя для проверки карточки.",
+      pubg_id: "51234567890",
+      amount: 1,
+      status: "new",
+      claimed_by: null,
+      claimed_by_name: null,
+    };
+    try {
+      await sendFunpayEscortCard(runner.bot, t, demo);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ detail: e.message });
+    }
   });
 
   router.get("/promos", checkTenantAuth, (req, res) => {

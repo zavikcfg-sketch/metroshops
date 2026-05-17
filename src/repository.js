@@ -5,6 +5,7 @@ import { getSettings } from "./config.js";
 import { CATEGORIES } from "./catalog.js";
 import { initPlatformSchema, getTenantById } from "./platform/tenants.js";
 import { runMigrations } from "./db/migrations.js";
+import { initFunpaySchema } from "./services/funpay/repository.js";
 import { assertCanAddProduct } from "./services/plans.js";
 
 let db;
@@ -112,6 +113,7 @@ export function initDb() {
   `);
   initPlatformSchema();
   runMigrations();
+  initFunpaySchema();
 }
 
 export function listProducts(botId, { activeOnly = false, category = null } = {}) {

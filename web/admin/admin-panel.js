@@ -55,6 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
         loadOnboarding();
       }
       if (name === "branding") loadBranding();
+      if (name === "funpay") loadFunpay();
       if (name === "broadcast") {
         $("#broadcast-result").textContent = "";
       }
@@ -459,6 +460,22 @@ document.addEventListener("DOMContentLoaded", () => {
         `</ul>`;
     }
 
+    async function loadFunpay() {
+      const fp = await api("/funpay");
+      const f = $("#funpay-form");
+      if (!f) return;
+      f.funpay_enabled.checked = !!fp.funpay_enabled;
+      f.funpay_escort_chat_id.value = fp.funpay_escort_chat_id || "";
+      f.funpay_golden_key.value = "";
+      f.funpay_golden_key.placeholder = fp.golden_key_set
+        ? `Сохранён: ${fp.golden_key_hint} (оставьте пустым, чтобы не менять)`
+        : "из DevTools → Application → Cookies";
+      $("#funpay-key-hint").textContent = fp.golden_key_set
+        ? `Ключ задан (${fp.golden_key_hint})`
+        : "Golden Key ещё не сохранён";
+      $("#funpay-result").textContent = "";
+    }
+
     async function loadBranding() {
       const b = await api("/branding");
       const f = $("#branding-form");
@@ -606,6 +623,30 @@ document.addEventListener("DOMContentLoaded", () => {
           });
         }
         alert("Сохранено");
+      });
+
+      $("#funpay-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const body = {
+          funpay_enabled: fd.get("funpay_enabled") === "on",
+          funpay_escort_chat_id: fd.get("funpay_escort_chat_id"),
+        };
+        const key = String(fd.get("funpay_golden_key") || "").trim();
+        if (key) body.funpay_golden_key = key;
+        await api("/funpay", { method: "PATCH", body: JSON.stringify(body) });
+        $("#funpay-result").textContent = "Сохранено";
+        loadFunpay();
+      });
+
+      $("#funpay-test-btn")?.addEventListener("click", async () => {
+        $("#funpay-result").textContent = "Отправка…";
+        try {
+          await api("/funpay/test", { method: "POST", body: "{}" });
+          $("#funpay-result").textContent = "Тестовая карточка отправлена в группу";
+        } catch (err) {
+          $("#funpay-result").textContent = err.message || "Ошибка";
+        }
       });
 
       $("#broadcast-form")?.addEventListener("submit", async (e) => {

@@ -52,6 +52,7 @@
         <a href="#promos" data-page="promos" class="nav-link">Промокоды</a>
         <a href="#invoices" data-page="invoices" class="nav-link">Заказы</a>
         <a href="#branding" data-page="branding" class="nav-link">Брендинг</a>
+        <a href="#funpay" data-page="funpay" class="nav-link">FunPay</a>
         <a href="#broadcast" data-page="broadcast" class="nav-link">Рассылка</a>
         <a href="#stats" data-page="stats" class="nav-link">Статистика</a>
         <a href="#users" data-page="users" class="nav-link">Пользователи</a>
@@ -94,6 +95,37 @@
             <button type="submit" class="btn btn-primary">Сохранить</button>
           </form>
         </div>
+      </section>
+
+      <section id="page-funpay" class="page hidden">
+        <h1>FunPay → группа сопровождения</h1>
+        <div class="card">
+          <p class="muted">
+            При новой покупке на FunPay в группу сопровождающих придёт карточка с товаром, ID покупателя и описанием.
+            Добавьте бота в группу и выдайте ему право писать сообщения.
+          </p>
+          <form id="funpay-form" class="modal-body" style="max-width:560px">
+            <label class="toggle-row" style="display:flex;align-items:center;gap:0.5rem">
+              <input name="funpay_enabled" type="checkbox" />
+              Включить интеграцию FunPay
+            </label>
+            <label>
+              Golden Key (cookie funpay.com)
+              <input name="funpay_golden_key" type="password" autocomplete="off" placeholder="из DevTools → Application → Cookies" />
+            </label>
+            <p class="muted" id="funpay-key-hint"></p>
+            <label>
+              ID группы сопровождения
+              <input name="funpay_escort_chat_id" placeholder="-1001234567890" />
+            </label>
+            <p class="muted">Узнать ID: добавьте @userinfobot в группу или перешлите сообщение из группы боту @RawDataBot.</p>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:1rem">
+              <button type="submit" class="btn btn-primary">Сохранить</button>
+              <button type="button" id="funpay-test-btn" class="btn btn-ghost">Тестовая карточка</button>
+            </div>
+            <p id="funpay-result" class="muted"></p>
+          </form>
+        </motion>
       </section>
 
       <section id="page-broadcast" class="page hidden">
